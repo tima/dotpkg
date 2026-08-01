@@ -31,9 +31,11 @@ chmod +x "$DOTPKG_HOME/dotpkg"
 echo "==> Linking dotpkg to /usr/local/bin/dotpkg..."
 mkdir -p /usr/local/bin
 ln -sf "$DOTPKG_HOME/dotpkg" /usr/local/bin/dotpkg
-SHELL_PROFILE="${SHELL##*/}"
-SHELL_PROFILE="$HOME/.${SHELL_PROFILE/bash/bash_profile}"
-SHELL_PROFILE="${SHELL_PROFILE/zsh/zprofile}"
+case "${SHELL##*/}" in
+  bash) SHELL_PROFILE="$HOME/.bash_profile" ;;
+  zsh)  SHELL_PROFILE="$HOME/.zprofile" ;;
+  *)    SHELL_PROFILE="$HOME/.profile" ;;
+esac
 if ! grep -q 'brew shellenv' "$SHELL_PROFILE" 2>/dev/null; then
   printf '\n# Homebrew\neval "$(/opt/homebrew/bin/brew shellenv)"\n' >> "$SHELL_PROFILE"
 fi
