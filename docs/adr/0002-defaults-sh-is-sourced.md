@@ -1,0 +1,3 @@
+# defaults.sh is sourced into dotpkg's process, not run as a subprocess
+
+When a bundle's `defaults.sh` runs, dotpkg sources it (`. defaults.sh`) rather than executing it in a subprocess (`bash defaults.sh`). This makes `dotpkg_preset` — a function defined in dotpkg's own process — available to the script without any export or library-sourcing boilerplate in every bundle. The isolation a subprocess provides is minimal in practice: a malicious `defaults.sh` can cause harm either way, and the real trust boundary is whether the user chose to install the bundle at all. Subprocess execution would require every bundle author to source a dotpkg library header, adding friction for no meaningful safety gain.

@@ -1,0 +1,399 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# dotpkg — macOS machine setup and dotfiles manager
+# Repo cloned to ~/.dotpkg/; this script symlinked to /usr/local/bin/dotpkg.
+
+export DOTPKG_HOME="${DOTPKG_HOME:-$HOME/.dotpkg}"
+DOTPKG_CONFIG="$DOTPKG_HOME/config"
+export STATE_FILE="${STATE_FILE:-$DOTPKG_HOME/state.json}"
+
+# Load persisted config (written by dotpkg init) or from env
+export DOTFILES_DIR="${DOTFILES_DIR:-$HOME/dotfiles}"
+if [[ -f "$DOTPKG_CONFIG" ]]; then
+  _cfg_dotfiles=$(grep '^dotfiles_dir=' "$DOTPKG_CONFIG" 2>/dev/null | cut -d= -f2-)
+  [[ -n "$_cfg_dotfiles" ]] && DOTFILES_DIR="$_cfg_dotfiles"
+  unset _cfg_dotfiles
+fi
+
+# Source libraries
+for _lib in "$DOTPKG_HOME/lib"/*.sh; do
+  # shellcheck disable=SC1090
+  . "$_lib"
+done
+unset _lib
+
+# ---------------------------------------------------------------------------
+# cmd_init — bootstrap a new or existing machine
+# ---------------------------------------------------------------------------
+cmd_init() {
+  local repo="" profile="" non_interactive=false
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --repo)            repo="$2"; shift 2 ;;
+      --profile)         profile="$2"; shift 2 ;;
+      --non-interactive|-y) non_interactive=true; shift ;;
+      *) echo "dotpkg init: unknown flag: $1" >&2; exit 1 ;;
+    esac
+  done
+
+  state_init
+
+  # Resolve dotfiles repo path
+  if [[ -z "$repo" ]]; then
+    if $non_interactive; then
+      repo="$HOME/dotfiles"
+    else
+      repo=$(_gum_input "Dotfiles repo path: " "$HOME/dotfiles")
+    fi
+  fi
+  repo="${repo/#\~/$HOME}"
+  DOTFILES_DIR="$repo"
+
+  # Persist config
+  printf 'dotfiles_dir=%s\n' "$repo" > "$DOTPKG_CONFIG"
+
+  # Create bundles dir if it doesn't exist
+  mkdir -p "$DOTFILES_DIR/bundles"
+
+  # Install root bundle (the dotfiles repo root itself)
+  if [[ ! -f "$DOTFILES_DIR/bundle.info" ]]; then
+    echo "dotpkg: no bundle.info found at $DOTFILES_DIR"
+    echo "        Create one with: dotpkg create (in your dotfiles repo)"
+    echo "        Skipping root bundle install."
+  else
+    echo "Installing root bundle..."
+    _DOTPKG_VISITED=""
+    install_bundle "$DOTFILES_DIR" "local"
+  fi
+
+  # Install profile if specified
+  if [[ -n "$profile" ]]; then
+    local profile_dir="$DOTFILES_DIR/profiles/$profile"
+    if [[ ! -d "$profile_dir" ]]; then
+      echo "dotpkg: profile not found: $profile (looked in $profile_dir)" >&2
+      exit 1
+    fi
+    echo "Installing profile: $profile..."
+    install_bundle "$profile_dir" "local"
+  fi
+
+  echo ""
+  echo "dotpkg: init complete"
+}
+
+# ---------------------------------------------------------------------------
+# cmd_add — install a bundle (root bundle always first if not installed)
+# ---------------------------------------------------------------------------
+cmd_add() {
+  local bundle_name="${1:-}"
+  [[ -z "$bundle_name" ]] && { echo "usage: dotpkg add <bundle>" >&2; exit 1; }
+
+  state_init
+  _DOTPKG_VISITED=""
+
+  # Always install root bundle first if present and not yet installed
+  if [[ -f "$DOTFILES_DIR/bundle.info" ]]; then
+    local root_name
+    root_name=$(bundle_info_get "$DOTFILES_DIR" name 2>/dev/null || true)
+    if [[ -n "$root_name" ]] && ! state_bundle_installed "$root_name" 2>/dev/null; then
+      echo "Installing root bundle first..."
+      install_bundle "$DOTFILES_DIR" "local"
+    fi
+  fi
+
+  local bundle_dir bundle_source
+  if ! bundle_dir=$(resolve_bundle "$bundle_name"); then
+    exit 1
+  fi
+  [[ "$bundle_name" == */* ]] && bundle_source="github" || bundle_source="local"
+
+  install_bundle "$bundle_dir" "$bundle_source"
+}
+
+# ---------------------------------------------------------------------------
+# cmd_sync — re-apply all installed bundles; reconcile to active profile
+# ---------------------------------------------------------------------------
+cmd_sync() {
+  state_init
+  _DOTPKG_VISITED=""
+  echo "Syncing installed bundles..."
+
+  local names bundle_dir
+  names=$(state_list_bundles)
+
+  while IFS= read -r name; do
+    [[ -z "$name" ]] && continue
+    if bundle_dir=$(resolve_bundle "$name" 2>/dev/null); then
+      install_bundle "$bundle_dir" "local"
+    else
+      echo "  skipping missing bundle: $name" >&2
+    fi
+  done <<< "$names"
+
+  echo ""
+  echo "dotpkg: sync complete"
+}
+
+# ---------------------------------------------------------------------------
+# cmd_status — show installed bundles and presets
+# ---------------------------------------------------------------------------
+cmd_status() {
+  state_init
+
+  if [[ "${1:-}" == "--json" ]]; then
+    state_get_json
+    return
+  fi
+
+  echo "Installed bundles:"
+  python3 - "$STATE_FILE" <<'EOF'
+import json, sys
+with open(sys.argv[1]) as fh: s = json.load(fh)
+bundles = s.get("installed_bundles", [])
+for b in bundles:
+    print(f"  {b['name']}  ({b['source']})  installed {b['installed_at']}")
+if not bundles:
+    print("  (none)")
+EOF
+}
+
+# ---------------------------------------------------------------------------
+# cmd_list — list available bundles from all sources
+# ---------------------------------------------------------------------------
+cmd_list() {
+  local show_remote=true show_local=true
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --remote) show_local=false; shift ;;
+      --local)  show_remote=false; shift ;;
+      *) echo "dotpkg list: unknown flag: $1" >&2; exit 1 ;;
+    esac
+  done
+
+  if $show_local; then
+    echo "Local bundles ($DOTFILES_DIR/bundles/):"
+    local d bname bdesc
+    if [[ -d "$DOTFILES_DIR/bundles" ]]; then
+      for d in "$DOTFILES_DIR/bundles"/*/; do
+        [[ -f "$d/bundle.info" ]] || continue
+        bname=$(bundle_info_get "$d" name)
+        bdesc=$(bundle_info_get "$d" description)
+        printf "  %-20s %s\n" "$bname" "$bdesc"
+      done
+    else
+      echo "  (none)"
+    fi
+
+    echo ""
+    echo "Profiles ($DOTFILES_DIR/profiles/):"
+    if [[ -d "$DOTFILES_DIR/profiles" ]]; then
+      for d in "$DOTFILES_DIR/profiles"/*/; do
+        [[ -f "$d/bundle.info" ]] || continue
+        bname=$(bundle_info_get "$d" name)
+        bdesc=$(bundle_info_get "$d" description)
+        printf "  %-20s %s\n" "$bname" "$bdesc"
+      done
+    else
+      echo "  (none)"
+    fi
+  fi
+
+  if $show_remote; then
+    # Show bundles from each registered source repo
+    if [[ -f "$DOTPKG_HOME/sources" ]]; then
+      echo ""
+      echo "Source bundles:"
+      local repo source_key source_cache
+      while IFS= read -r repo; do
+        [[ -z "$repo" || "$repo" == \#* ]] && continue
+        source_key=$(_source_cache_key "$repo")
+        source_cache="$DOTPKG_HOME/cache/sources/$source_key"
+        printf "  [%s]\n" "$repo"
+        if [[ -d "$source_cache/bundles" ]]; then
+          for d in "$source_cache/bundles"/*/; do
+            [[ -f "$d/bundle.info" ]] || continue
+            bname=$(bundle_info_get "$d" name)
+            bdesc=$(bundle_info_get "$d" description)
+            printf "    %-20s %s\n" "$bname" "$bdesc"
+          done
+        else
+          echo "    (not fetched — run 'dotpkg update')"
+        fi
+      done < "$DOTPKG_HOME/sources"
+    fi
+
+    # Show cached GitHub shorthand bundles
+    if [[ -d "$DOTPKG_HOME/cache/github" ]]; then
+      echo ""
+      echo "Cached GitHub bundles:"
+      local user_dir repo_dir
+      for user_dir in "$DOTPKG_HOME/cache/github"/*/; do
+        [[ -d "$user_dir" ]] || continue
+        for repo_dir in "$user_dir"*/; do
+          [[ -f "$repo_dir/bundle.info" ]] || continue
+          bname=$(bundle_info_get "$repo_dir" name)
+          bdesc=$(bundle_info_get "$repo_dir" description)
+          printf "  %-20s %s\n" "$bname" "$bdesc"
+        done
+      done
+    fi
+  fi
+}
+
+# ---------------------------------------------------------------------------
+# cmd_update — pull latest source + GitHub cached repos, then re-sync
+# ---------------------------------------------------------------------------
+cmd_update() {
+  echo "Updating remote bundles..."
+
+  # Pull registered source repos (clone if not yet fetched)
+  if [[ -f "$DOTPKG_HOME/sources" ]]; then
+    local repo source_key source_cache
+    while IFS= read -r repo; do
+      [[ -z "$repo" || "$repo" == \#* ]] && continue
+      source_key=$(_source_cache_key "$repo")
+      source_cache="$DOTPKG_HOME/cache/sources/$source_key"
+      if [[ -d "$source_cache/.git" ]]; then
+        echo "  pulling $repo..."
+        git -C "$source_cache" pull --quiet
+      else
+        _clone_source "$repo" "$source_cache" || true
+      fi
+    done < "$DOTPKG_HOME/sources"
+  fi
+
+  # Pull cached GitHub shorthand bundles (already confirmed + installed)
+  if [[ -d "$DOTPKG_HOME/cache/github" ]]; then
+    local repo_dir
+    for repo_dir in "$DOTPKG_HOME/cache/github"/*/*; do
+      [[ -d "$repo_dir/.git" ]] || continue
+      echo "  pulling $(basename "$(dirname "$repo_dir")")/$(basename "$repo_dir")..."
+      git -C "$repo_dir" pull --quiet
+    done
+  fi
+
+  cmd_sync
+}
+
+# ---------------------------------------------------------------------------
+# cmd_create — scaffold a new bundle directory
+# ---------------------------------------------------------------------------
+cmd_create() {
+  local name="${1:-}"
+  [[ -z "$name" ]] && { echo "usage: dotpkg create <name>" >&2; exit 1; }
+  local bundle_dir="$DOTFILES_DIR/bundles/$name"
+  if [[ -d "$bundle_dir" ]]; then
+    echo "dotpkg: bundle already exists: $bundle_dir" >&2; return 1
+  fi
+  mkdir -p "$bundle_dir/stow"
+  cat > "$bundle_dir/bundle.info" <<EOF
+name=$name
+description=
+author=
+type=bundle
+EOF
+  echo "Created $bundle_dir"
+  echo "Edit $bundle_dir/bundle.info and add a Brewfile, stow/, or defaults.sh as needed."
+}
+
+# ---------------------------------------------------------------------------
+# cmd_adopt — import existing state into bundles
+# ---------------------------------------------------------------------------
+cmd_adopt() {
+  local mode="${1:-}"
+  case "$mode" in
+    --brew)
+      local bundle_name
+      echo "Generating Brewfile from currently installed packages..."
+      local tmp_brew
+      tmp_brew=$(mktemp)
+      brew bundle dump --file="$tmp_brew" --force
+      echo ""
+      _gum_pager < "$tmp_brew"
+      echo ""
+      bundle_name=$(_gum_input "Assign to bundle (in bundles/): " "personal")
+      if ! _gum_confirm "Write Brewfile to $DOTFILES_DIR/bundles/$bundle_name/Brewfile?"; then
+        rm -f "$tmp_brew"
+        echo "dotpkg: aborted"
+        return
+      fi
+      mkdir -p "$DOTFILES_DIR/bundles/$bundle_name"
+      mv "$tmp_brew" "$DOTFILES_DIR/bundles/$bundle_name/Brewfile"
+      echo "Written to $DOTFILES_DIR/bundles/$bundle_name/Brewfile"
+      ;;
+    *)
+      echo "usage: dotpkg adopt --brew" >&2
+      echo "       dotpkg adopt <file> --bundle <name>" >&2
+      exit 1 ;;
+  esac
+}
+
+# ---------------------------------------------------------------------------
+# cmd_help
+# ---------------------------------------------------------------------------
+cmd_help() {
+  cat <<'EOF'
+dotpkg — macOS machine setup and dotfiles manager
+
+USAGE
+  dotpkg <command> [flags]
+
+COMMANDS
+  init   [--repo PATH] [--profile NAME] [-y]
+         Bootstrap machine: install root bundle, optionally install a profile.
+
+  add    <bundle>
+         Install a bundle. Root bundle installed first if not already present.
+         Accepts local name, profile name, or GitHub shorthand (user/repo).
+
+  sync   Re-apply all installed bundles. Idempotent.
+
+  status [--json]
+         Show installed bundles. --json for AI-consumable output.
+
+  list   [--local | --remote]
+         List available bundles from all sources.
+
+  update Pull latest remote bundles and re-sync.
+
+  create <name>
+         Scaffold a new bundle in bundles/<name>/.
+
+  adopt  --brew
+         Import installed Homebrew packages into a bundle Brewfile.
+
+BUNDLE SOURCES (resolved in order)
+  1. Local:          ~/dotfiles/bundles/<name>/
+  2. Profiles:       ~/dotfiles/profiles/<name>/
+  3. Sources:        ~/.dotpkg/sources (trusted, skip preview)
+  4. GitHub:         user/repo (cloned to ~/.dotpkg/cache/, full preview required)
+
+ENV
+  DOTPKG_HOME    dotpkg tool directory (default: ~/.dotpkg)
+  DOTFILES_DIR   dotfiles repo (default: ~/dotfiles, persisted in ~/.dotpkg/config)
+EOF
+}
+
+# ---------------------------------------------------------------------------
+# Dispatch
+# ---------------------------------------------------------------------------
+cmd="${1:-help}"
+shift 2>/dev/null || true
+
+case "$cmd" in
+  init)          cmd_init "$@" ;;
+  add)           cmd_add "$@" ;;
+  sync)          cmd_sync "$@" ;;
+  status)        cmd_status "$@" ;;
+  list)          cmd_list "$@" ;;
+  update)        cmd_update "$@" ;;
+  create)        cmd_create "$@" ;;
+  adopt)         cmd_adopt "$@" ;;
+  help|--help|-h) cmd_help ;;
+  --version|-v)  echo "dotpkg 0.1.0" ;;
+  *) echo "dotpkg: unknown command: $cmd" >&2
+     echo "Run 'dotpkg help' for usage." >&2
+     exit 1 ;;
+esac
