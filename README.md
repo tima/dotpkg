@@ -382,25 +382,6 @@ Dump currently installed Homebrew packages, review, and assign to a bundle.
 
 ---
 
-## Development
-
-**Branching**: commit directly to main for solo work. Add feature branches when external contributors join.
-
-**Commit at natural boundaries** — completed feature, new lib, new test suite, docs update. Don't let work accumulate across sessions uncommitted.
-
-**Run tests before committing**:
-
-```bash
-bash tests/test_bundle.sh
-bash tests/test_phase3.sh
-bash tests/test_integration_phase2.sh
-bash tests/test_helpers.sh
-```
-
-Tests use plain bash with assert helpers and mocked system commands — no framework, no system side-effects. All 135 assertions must pass.
-
----
-
 ## AI interface
 
 dotpkg is designed for AI agent consumption:
