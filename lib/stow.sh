@@ -1,8 +1,5 @@
 #!/usr/bin/env bash
-# GNU Stow wrappers for bundle config management
-# All functions take (bundle_dir, target) where bundle_dir contains a stow/ subdir
-
-# stow_check: dry-run to detect conflicts before applying. Returns 1 if conflicts found.
+# GNU Stow wrappers
 stow_check() {
   local bundle_dir="$1" target="${2:-$HOME}"
   local output conflicts
@@ -18,9 +15,4 @@ stow_check() {
 stow_apply() {
   local bundle_dir="$1" target="${2:-$HOME}"
   stow --dir="$bundle_dir" --target="$target" stow
-}
-
-stow_remove() {
-  local bundle_dir="$1" target="${2:-$HOME}"
-  stow --dir="$bundle_dir" --target="$target" --delete stow
 }

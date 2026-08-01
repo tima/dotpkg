@@ -1,11 +1,7 @@
 #!/usr/bin/env bash
-# Bundle install, resolution, and dependency traversal.
-# Requires: DOTPKG_HOME, DOTFILES_DIR, state.sh, stow.sh, helpers.sh sourced by caller.
+# Bundle install, resolution, and dependency traversal
 
-# ---------------------------------------------------------------------------
-# Visited-set — global string of colon-separated bundle names.
-# Reset (_DOTPKG_VISITED="") before each top-level install call.
-# ---------------------------------------------------------------------------
+# Visited-set — reset before each top-level install
 _DOTPKG_VISITED=""
 
 _bundle_visited() {
@@ -16,30 +12,20 @@ _bundle_visit() {
   _DOTPKG_VISITED="${_DOTPKG_VISITED:+${_DOTPKG_VISITED}:}${1}"
 }
 
-# ---------------------------------------------------------------------------
-# bundle_info_get <bundle_dir> <key> — read a key from bundle.info
-# ---------------------------------------------------------------------------
 bundle_info_get() {
   grep "^${2}=" "${1}/bundle.info" 2>/dev/null | cut -d= -f2-
 }
 
-# ---------------------------------------------------------------------------
-# _source_cache_key <repo-spec> — normalize a source repo spec to a cache path key.
-# Handles: user/repo, https://host/path, git@host:org/repo.git
-# ---------------------------------------------------------------------------
 _source_cache_key() {
   local repo="$1"
-  repo="${repo%.git}"          # strip .git suffix
-  repo="${repo#https://}"      # strip https://
-  repo="${repo#http://}"       # strip http://
-  repo="${repo#git@}"          # strip git@
-  repo="${repo/://}"           # git@host:org/repo -> host/org/repo (replace first : with /)
+  repo="${repo%.git}"
+  repo="${repo#https://}"
+  repo="${repo#http://}"
+  repo="${repo#git@}"
+  repo="${repo/://}"
   echo "$repo"
 }
 
-# ---------------------------------------------------------------------------
-# _clone_source <repo-spec> <cache_dir> — clone a source repo (no preview, trusted).
-# ---------------------------------------------------------------------------
 _clone_source() {
   local repo="$1" cache_dir="$2"
   local url
@@ -54,10 +40,7 @@ _clone_source() {
   git clone --quiet "$url" "$cache_dir"
 }
 
-# ---------------------------------------------------------------------------
-# resolve_bundle <name> — returns absolute path to the bundle directory.
-# Resolution order (per spec): local bundles/ -> profiles/ -> sources -> GitHub shorthand.
-# ---------------------------------------------------------------------------
+# Resolution order: local bundles/ -> profiles/ -> sources -> GitHub shorthand
 resolve_bundle() {
   local name="$1"
 
@@ -107,11 +90,7 @@ resolve_bundle() {
   return 1
 }
 
-# ---------------------------------------------------------------------------
-# _fetch_github_bundle <user/repo> <cache_dir>
-# Shows full preview, requires explicit y confirmation, then caches.
-# Trust model: ADR-0003 — GitHub shorthand requires preview; sources are trusted.
-# ---------------------------------------------------------------------------
+# ponytail: GitHub shorthand requires preview; sources are trusted
 _fetch_github_bundle() {
   local shorthand="$1" cache_dir="$2"
   local url="https://github.com/${shorthand}.git"
@@ -153,10 +132,6 @@ _fetch_github_bundle() {
   cp -r "$tmp_dir" "$cache_dir"
 }
 
-# ---------------------------------------------------------------------------
-# install_extensions <extensions_txt>
-# Installs editor extensions; unavailable = warn+continue, other errors = abort.
-# ---------------------------------------------------------------------------
 install_extensions() {
   local ext_file="$1"
   local editors=()
@@ -192,10 +167,6 @@ install_extensions() {
   done < "$ext_file"
 }
 
-# ---------------------------------------------------------------------------
-# install_bundle <bundle_dir> [source]
-# Core install: deps -> Brewfile -> stow -> defaults.sh -> extensions -> themes.
-# ---------------------------------------------------------------------------
 install_bundle() {
   local bundle_dir="$1" source="${2:-local}"
 

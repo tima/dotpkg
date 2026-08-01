@@ -1,20 +1,17 @@
 #!/usr/bin/env bash
-# Thin wrappers around gum that fall back to plain read/cat when gum is absent.
-# Non-interactive detection: if stdin is not a tty and gum is absent, use safe defaults.
+# Gum wrappers with fallback
 
 _gum_input() {
   local prompt="$1" default="${2:-}"
   if type -P gum &>/dev/null; then
     gum input --prompt "$prompt" --value "$default"
-    return
-  fi
-  if [[ ! -t 0 ]]; then
+  elif [[ ! -t 0 ]]; then
     echo "$default"
-    return
+  else
+    local reply
+    IFS= read -r -p "$prompt" reply </dev/tty
+    echo "${reply:-$default}"
   fi
-  local reply
-  IFS= read -r -p "$prompt" reply </dev/tty
-  echo "${reply:-$default}"
 }
 
 _gum_confirm() {
@@ -33,10 +30,5 @@ _gum_confirm() {
 }
 
 _gum_pager() {
-  if type -P gum &>/dev/null; then
-    gum pager
-    return
-  fi
-  command -v less &>/dev/null && { less; return; }
-  cat
+  type -P gum &>/dev/null && gum pager || ${PAGER:-less}
 }

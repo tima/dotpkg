@@ -1,12 +1,5 @@
 #!/usr/bin/env bash
-# dotpkg preset and helper functions — sourced into dotpkg's process so they are
-# available when bundle defaults.sh files are sourced.
-
-# ---------------------------------------------------------------------------
-# dotpkg_preset — apply a named group of defaults write commands
-# ---------------------------------------------------------------------------
-# ponytail: preset signatures chosen from macos.sh reference; TBD per spec.
-# Callers: bundle defaults.sh files (personal and tool bundles).
+# dotpkg preset and helper functions
 
 dotpkg_preset() {
   local category="${1:-}"
@@ -35,7 +28,7 @@ dotpkg_preset() {
   fi
   # Record in state if state.sh is loaded
   if declare -f state_add_preset >/dev/null 2>&1; then
-    state_add_preset "$category" 2>/dev/null || true
+    state_add_preset "$category"
   fi
 }
 
@@ -57,7 +50,6 @@ _preset_keyboard() {
 }
 
 _preset_finder() {
-  # ponytail: no params — all values match macos.sh reference defaults.
   defaults write com.apple.finder AppleShowAllFiles -bool true
   defaults write com.apple.finder _FXShowPosixPathInTitle -bool true
   defaults write com.apple.finder WarnOnEmptyTrash -bool false
@@ -88,8 +80,6 @@ _preset_dock() {
 }
 
 _preset_trackpad() {
-  # ponytail: defaults match macos.sh — disable force click, enable tap-to-click optional.
-  # Disable force click by default (matches user preference in macos.sh)
   defaults write NSGlobalDomain com.apple.trackpad.forceClick -bool false
   defaults write com.apple.AppleMultitouchTrackpad ForceSuppressed -bool true
   while [[ $# -gt 0 ]]; do
@@ -145,9 +135,6 @@ _preset_menubar() {
   defaults write com.apple.Siri StatusMenuVisible -bool false
 }
 
-# ponytail: accent color int values from Apple's AppleAccentColor pref.
-_ACCENT_COLORS=(graphite:-1 red:0 orange:1 yellow:2 green:3 blue:4 purple:5 pink:6)
-
 _preset_accent_color() {
   local value="graphite"
   while [[ $# -gt 0 ]]; do
@@ -160,28 +147,23 @@ _preset_accent_color() {
     defaults delete NSGlobalDomain AppleAccentColor 2>/dev/null || true
     return
   fi
-  local int_val=""
-  local pair
-  for pair in "${_ACCENT_COLORS[@]}"; do
-    if [[ "${pair%%:*}" == "$value" ]]; then
-      int_val="${pair##*:}"
-      break
-    fi
-  done
-  [[ -z "$int_val" ]] && { echo "dotpkg_preset accent-color: unknown color: $value (graphite|red|orange|yellow|green|blue|purple|pink|multicolor)" >&2; return 1; }
+  local int_val
+  case "$value" in
+    graphite) int_val=-1 ;;
+    red)      int_val=0 ;;
+    orange)   int_val=1 ;;
+    yellow)   int_val=2 ;;
+    green)    int_val=3 ;;
+    blue)     int_val=4 ;;
+    purple)   int_val=5 ;;
+    pink)     int_val=6 ;;
+    *) echo "dotpkg_preset accent-color: unknown color: $value (graphite|red|orange|yellow|green|blue|purple|pink|multicolor)" >&2; return 1 ;;
+  esac
   defaults write NSGlobalDomain AppleAccentColor -int "$int_val"
 }
 
 _preset_spotlight() {
-  # ponytail: no configurable params yet; just applies sensible search scope defaults.
-  while [[ $# -gt 0 ]]; do
-    case "$1" in
-      --disable-web-search)
-        # Handled by disabling the Spotlight hotkey rather than web search pref
-        shift 2 ;;
-      *) echo "dotpkg_preset spotlight: unknown flag: $1" >&2; return 1 ;;
-    esac
-  done
+  :  # ponytail: no-op until flags exist
 }
 
 _preset_privacy() {
@@ -198,10 +180,7 @@ _preset_privacy() {
   done
 }
 
-# ---------------------------------------------------------------------------
-# dotpkg_hotkey_disable — disable system hotkeys by name
-# ---------------------------------------------------------------------------
-# ponytail: hotkey IDs from Apple's AppleSymbolicHotKeys pref (from macos.sh).
+# ponytail: hotkey IDs from Apple's AppleSymbolicHotKeys pref
 
 dotpkg_hotkey_disable() {
   local name="${1:-}"
@@ -221,12 +200,7 @@ dotpkg_hotkey_disable() {
   esac
 }
 
-# ---------------------------------------------------------------------------
-# dotpkg_hotkey_set_corner — configure macOS hot corners
-# ---------------------------------------------------------------------------
-# ponytail: position and action enums TBD per spec; minimal set implemented.
-# Positions: tl tr bl br. Actions: 0=none 2=mission-control 3=show-application-windows
-# 4=desktop 10=put-display-to-sleep 11=launchpad 14=notification-center.
+# ponytail: hot corner actions — 0=none 2=mission-control 3=show-application-windows 4=desktop 10=put-display-to-sleep 11=launchpad 14=notification-center
 
 dotpkg_hotkey_set_corner() {
   local position="${1:-}" action="${2:-}"
@@ -244,9 +218,6 @@ dotpkg_hotkey_set_corner() {
   defaults write com.apple.dock "$modifier_key" -int 0
 }
 
-# ---------------------------------------------------------------------------
-# dotpkg_dock — dock app management
-# ---------------------------------------------------------------------------
 
 dotpkg_dock() {
   local subcmd="${1:-}"
@@ -272,11 +243,7 @@ _dock_add() {
   killall Dock 2>/dev/null || true
 }
 
-# ---------------------------------------------------------------------------
-# dotpkg_wallpaper — set wallpaper across all spaces and displays
-# ---------------------------------------------------------------------------
-# ponytail: three-approach strategy from macos.sh — handles Sonoma+, Ventura,
-# and provides AppleScript fallback. Covers all current macOS versions.
+# ponytail: three-approach strategy — Sonoma plist, Ventura sqlite, AppleScript fallback
 
 dotpkg_wallpaper() {
   local path="${1:-}"
@@ -304,11 +271,7 @@ dotpkg_wallpaper() {
   osascript -e "tell application \"System Events\" to tell every desktop to set picture to \"${path}\""
 }
 
-# ---------------------------------------------------------------------------
-# dotpkg_terminal_import — import a Terminal.app theme and set as default
-# ---------------------------------------------------------------------------
-# ponytail: sleep 1 is needed for Terminal.app to register the opened theme before
-# writing defaults. Known fragile; no better API available.
+# ponytail: sleep 1 needed for Terminal.app to register imported theme
 
 dotpkg_terminal_import() {
   local theme_file="${1:-}"

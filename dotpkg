@@ -1,14 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# dotpkg — macOS machine setup and dotfiles manager
-# Repo cloned to ~/.dotpkg/; this script symlinked to /usr/local/bin/dotpkg.
-
 export DOTPKG_HOME="${DOTPKG_HOME:-$HOME/.dotpkg}"
 DOTPKG_CONFIG="$DOTPKG_HOME/config"
 export STATE_FILE="${STATE_FILE:-$DOTPKG_HOME/state.json}"
-
-# Load persisted config (written by dotpkg init) or from env
 export DOTFILES_DIR="${DOTFILES_DIR:-$HOME/dotfiles}"
 if [[ -f "$DOTPKG_CONFIG" ]]; then
   _cfg_dotfiles=$(grep '^dotfiles_dir=' "$DOTPKG_CONFIG" 2>/dev/null | cut -d= -f2-)
@@ -16,16 +11,8 @@ if [[ -f "$DOTPKG_CONFIG" ]]; then
   unset _cfg_dotfiles
 fi
 
-# Source libraries
-for _lib in "$DOTPKG_HOME/lib"/*.sh; do
-  # shellcheck disable=SC1090
-  . "$_lib"
-done
+for _lib in "$DOTPKG_HOME/lib"/*.sh; do . "$_lib"; done
 unset _lib
-
-# ---------------------------------------------------------------------------
-# cmd_init — bootstrap a new or existing machine
-# ---------------------------------------------------------------------------
 cmd_init() {
   local repo="" profile="" non_interactive=false
 
