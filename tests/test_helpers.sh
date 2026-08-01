@@ -36,6 +36,10 @@ cp "$REPO/lib"/*.sh "$DOTPKG_HOME/lib/"
 # shellcheck disable=SC1090
 . "$DOTPKG_HOME/lib/prompt.sh"
 # shellcheck disable=SC1090
+. "$DOTPKG_HOME/lib/stow.sh"
+# shellcheck disable=SC1090
+. "$DOTPKG_HOME/lib/bundle.sh"
+# shellcheck disable=SC1090
 . "$DOTPKG_HOME/lib/helpers.sh"
 
 state_init
@@ -322,6 +326,72 @@ assert_true "gum_confirm: uses gum when available (returns 0)" _gum_confirm "ok?
 
 pager_out=$(echo "via gum" | _gum_pager)
 assert_eq "gum_pager: passes content through gum pager" "$pager_out" "via gum"
+
+# ---------------------------------------------------------------------------
+# _cmd_adopt_file — file adoption into bundle stow package
+# ---------------------------------------------------------------------------
+
+# Extract _cmd_adopt_file from dotpkg (fake gum is already in PATH from above)
+eval "$(sed -n '/^_cmd_adopt_file()/,/^}/p' "$REPO/dotpkg")"
+
+# Mock stow_apply to record calls without touching the filesystem
+STOW_ADOPT_LOG="$TEST_ROOT/stow_adopt.log"
+stow_apply() { echo "stow_apply $*" >> "$STOW_ADOPT_LOG"; }
+
+# Fixture bundle
+mkdir -p "$DOTFILES_DIR/bundles/shell-config/stow"
+cat > "$DOTFILES_DIR/bundles/shell-config/bundle.info" <<'EOF'
+name=shell-config
+type=bundle
+EOF
+
+# Use a fake HOME so adopt tests don't touch the real home directory
+_REAL_HOME="$HOME"
+export HOME="$TEST_ROOT/fakehome"
+mkdir -p "$HOME"
+
+# Happy path: file adopted, moved to stow dest, stow_apply called
+echo "# zshrc content" > "$HOME/.zshrc"
+_cmd_adopt_file "$HOME/.zshrc" --bundle shell-config -y
+assert_false "adopt: original file removed"       test -f "$HOME/.zshrc"
+assert_true  "adopt: file in stow dest"           test -f "$DOTFILES_DIR/bundles/shell-config/stow/.zshrc"
+assert_true  "adopt: stow_apply called"           grep -q "stow_apply" "$STOW_ADOPT_LOG"
+
+# Nested path: file in a subdirectory
+mkdir -p "$HOME/.config/nvim"
+echo "# init.lua" > "$HOME/.config/nvim/init.lua"
+_cmd_adopt_file "$HOME/.config/nvim/init.lua" --bundle shell-config -y
+assert_true "adopt: nested path in stow dest" \
+  test -f "$DOTFILES_DIR/bundles/shell-config/stow/.config/nvim/init.lua"
+
+# Error: file not found
+assert_false "adopt: missing file returns 1" \
+  _cmd_adopt_file "$HOME/does_not_exist_xyz" --bundle shell-config -y
+
+# Error: file is already a symlink
+ln -s /dev/null "$HOME/.symlink_test"
+assert_false "adopt: symlink returns 1" \
+  _cmd_adopt_file "$HOME/.symlink_test" --bundle shell-config -y
+rm "$HOME/.symlink_test"
+
+# Error: bundle not found
+echo "content" > "$HOME/.tmpfile"
+assert_false "adopt: bad bundle returns 1" \
+  _cmd_adopt_file "$HOME/.tmpfile" --bundle no-such-bundle -y
+rm -f "$HOME/.tmpfile"
+
+# Error: --bundle missing
+echo "content" > "$HOME/.tmpfile2"
+assert_false "adopt: missing --bundle returns 1" \
+  _cmd_adopt_file "$HOME/.tmpfile2" -y
+rm -f "$HOME/.tmpfile2"
+
+# Error: file outside HOME
+echo "tmp" > "$TEST_ROOT/outside_home_file"
+assert_false "adopt: file outside HOME returns 1" \
+  _cmd_adopt_file "$TEST_ROOT/outside_home_file" --bundle shell-config -y
+
+export HOME="$_REAL_HOME"
 
 # ---------------------------------------------------------------------------
 # Summary

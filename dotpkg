@@ -323,11 +323,61 @@ cmd_adopt() {
       mv "$tmp_brew" "$DOTFILES_DIR/bundles/$bundle_name/Brewfile"
       echo "Written to $DOTFILES_DIR/bundles/$bundle_name/Brewfile"
       ;;
-    *)
+    "")
       echo "usage: dotpkg adopt --brew" >&2
-      echo "       dotpkg adopt <file> --bundle <name>" >&2
-      exit 1 ;;
+      echo "       dotpkg adopt <file> --bundle <name> [-y]" >&2
+      return 1 ;;
+    *)
+      _cmd_adopt_file "$@"
+      ;;
   esac
+}
+
+# ---------------------------------------------------------------------------
+# _cmd_adopt_file — move a config file into a bundle's stow package
+# ---------------------------------------------------------------------------
+_cmd_adopt_file() {
+  local file="${1:-}"; shift 2>/dev/null || true
+  local bundle_name="" non_interactive=false
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --bundle|-b) bundle_name="$2"; shift 2 ;;
+      -y|--non-interactive) non_interactive=true; shift ;;
+      *) echo "dotpkg adopt: unknown flag: $1" >&2; return 1 ;;
+    esac
+  done
+
+  [[ -z "$file" ]]        && { echo "usage: dotpkg adopt <file> --bundle <name>" >&2; return 1; }
+  [[ -z "$bundle_name" ]] && { echo "dotpkg adopt: --bundle <name> required" >&2; return 1; }
+
+  file="${file/#\~/$HOME}"
+  [[ ! -e "$file" ]] && { echo "dotpkg adopt: file not found: $file" >&2; return 1; }
+  [[ -L "$file" ]]   && { echo "dotpkg adopt: already a symlink (already managed?): $file" >&2; return 1; }
+
+  local bundle_dir="$DOTFILES_DIR/bundles/$bundle_name"
+  [[ ! -d "$bundle_dir" ]] && { echo "dotpkg adopt: bundle not found: $bundle_name" >&2; return 1; }
+
+  # File must be under HOME — stow can only manage HOME-relative paths by default
+  local rel_path="${file#$HOME/}"
+  [[ "$rel_path" == "$file" ]] && { echo "dotpkg adopt: file must be under \$HOME: $file" >&2; return 1; }
+
+  local stow_dest="$bundle_dir/stow/$rel_path"
+
+  if ! $non_interactive; then
+    _gum_confirm "Move $file -> $stow_dest and stow?" || { echo "dotpkg: aborted"; return 0; }
+  fi
+
+  mkdir -p "$(dirname "$stow_dest")"
+  mv "$file" "$stow_dest"
+
+  local stow_target
+  stow_target=$(bundle_info_get "$bundle_dir" stow_target 2>/dev/null || true)
+  stow_target="${stow_target:-$HOME}"
+  stow_target="${stow_target/#\~/$HOME}"
+
+  stow_apply "$bundle_dir" "$stow_target"
+  echo "dotpkg: adopted '$rel_path' into bundle '$bundle_name'"
 }
 
 # ---------------------------------------------------------------------------

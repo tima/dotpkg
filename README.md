@@ -76,10 +76,11 @@ dotpkg init --repo ~/dotfiles
 dotpkg init --repo ~/dotfiles --profile workstation
 ```
 
-Import your existing Homebrew packages into a bundle:
+Import existing state into bundles:
 
 ```bash
-dotpkg adopt --brew
+dotpkg adopt --brew                                  # import Homebrew packages
+dotpkg adopt ~/.zshrc --bundle shell-config          # move a config file into a bundle
 ```
 
 ---
@@ -379,6 +380,11 @@ Scaffold a new bundle directory under `bundles/<name>/`.
 dotpkg adopt --brew
 ```
 Dump currently installed Homebrew packages, review, and assign to a bundle.
+
+```
+dotpkg adopt <file> --bundle <name> [-y]
+```
+Move a config file into a bundle's `stow/` package and immediately stow it, creating a symlink at the original location. File must be under `$HOME` and must not already be a symlink. Use `-y` to skip confirmation.
 
 ---
 

@@ -243,7 +243,7 @@ install_bundle() {
   local stow_paths=""
   if [[ -d "$bundle_dir/stow" ]]; then
     local stow_target
-    stow_target=$(bundle_info_get "$bundle_dir" stow_target)
+    stow_target=$(bundle_info_get "$bundle_dir" stow_target 2>/dev/null || true)
     stow_target="${stow_target:-$HOME}"
     stow_target="${stow_target/#\~/$HOME}"
     echo "  [stow] linking configs -> $stow_target..."
@@ -268,7 +268,7 @@ install_bundle() {
   # 6. Themes — always re-copy unconditionally (idempotent by design)
   if [[ -d "$bundle_dir/themes" ]]; then
     local theme_target
-    theme_target=$(bundle_info_get "$bundle_dir" theme_target)
+    theme_target=$(bundle_info_get "$bundle_dir" theme_target 2>/dev/null || true)
     if [[ -n "$theme_target" ]]; then
       theme_target="${theme_target/#\~/$HOME}"
       mkdir -p "$theme_target"
