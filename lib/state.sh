@@ -1,5 +1,12 @@
 #!/usr/bin/env bash
 # state.json CRUD — requires DOTPKG_HOME to be set by caller
+#
+# Uses inline python3 for JSON read/write. Reasons:
+#   1. python3 ships with Xcode CLT (bootstrap.sh installs it); jq does not.
+#   2. JSON manipulation via sed/awk/grep is fragile on nested data.
+#   3. Shell variables are passed as sys.argv, never interpolated into the
+#      script body — avoids injection if bundle names contain quotes or
+#      special characters.
 
 STATE_FILE="${STATE_FILE:-$DOTPKG_HOME/state.json}"
 
