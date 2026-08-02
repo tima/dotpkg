@@ -236,13 +236,16 @@ dotpkg_terminal_import ~/dotfiles/themes/nord.terminal
 
 **Machine-local overrides:**
 
-To override individual preset values per machine without editing the bundle, create a file at `~/.dotpkg/presets/<category>.local.sh`. It is sourced after the preset runs.
+Override individual preset values per machine without editing the bundle. Create `~/.dotpkg/presets/<category>.local.sh` — sourced **after** the preset runs, so your values win.
 
-Example `~/.dotpkg/presets/keyboard.local.sh`:
+Example: bundle sets `KeyRepeat=2`, but you want `1` on this machine:
 
 ```bash
-defaults write NSGlobalDomain KeyRepeat -int 1   # faster on this machine
+# ~/.dotpkg/presets/keyboard.local.sh
+defaults write NSGlobalDomain KeyRepeat -int 1
 ```
+
+The preset's other values (InitialKeyRepeat, auto-capitalize, etc.) remain unchanged. Only keys you explicitly override are replaced.
 
 **Raw defaults:** `defaults.sh` can contain arbitrary bash. Presets and helpers are the recommended path for safety and idempotency, but nothing is restricted.
 

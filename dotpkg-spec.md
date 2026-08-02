@@ -152,9 +152,7 @@ A shell script that applies macOS presets and system configuration. dotpkg sourc
 - `dotpkg_terminal_import` — set terminal theme (personal, not tool-specific)
 
 **Bundle helpers** (any bundle):
-- `dotpkg_dock add <app> [<app> ...]` — append apps to dock
-- `dotpkg_dock clear` — remove all apps from dock
-- `dotpkg_dock set <app> [<app> ...]` — replace dock contents (clear then add)
+- `dotpkg_dock add <app> [<app> ...]` — add apps to dock (tool bundles add their apps)
 - `dotpkg_preset` for non-personal categories (TBD: which are bundle-scoped)
 
 **Convention vs. enforcement:**
@@ -173,8 +171,7 @@ dotpkg_terminal_import ~/dotfiles/themes/catppuccin-mocha.terminal
 Example (tool bundle):
 ```
 #!/bin/bash
-dotpkg_dock set "Visual Studio Code" "Handbrake"  # replace dock
-# or: dotpkg_dock add "Visual Studio Code"        # append to existing
+dotpkg_dock add "Visual Studio Code" Handbrake
 ```
 
 ### extensions.txt
@@ -291,13 +288,11 @@ Preset categories with example parameter usage (signatures TBD):
 
 - `dotpkg_hotkey_disable <name>` -- disable system hotkeys (e.g., `spotlight`, `mission-control`)
 - `dotpkg_hotkey_set_corner <position> <action>` -- configure hot corners (TBD: position and action enums)
-- `dotpkg_dock add <app-name> [<app-name> ...]` -- append apps to the dock
-- `dotpkg_dock clear` -- remove all apps from the dock
-- `dotpkg_dock set <app-name> [<app-name> ...]` -- replace dock contents (clear + add)
+- `dotpkg_dock add <app-name> [<app-name> ...]` -- add apps to the dock
 - `dotpkg_wallpaper <path>` -- set desktop wallpaper across all spaces/displays
 - `dotpkg_terminal_import <path-to-terminal-file>` -- import and set as default terminal theme
 
-Users can override individual values within a preset using the `.local` pattern.
+Users can override individual values within a preset using the `.local` pattern (see Machine-Local Overrides below).
 
 
 ## Machine-Local Overrides
@@ -306,9 +301,31 @@ dotpkg bakes in the `.local` convention for per-machine customization. Any confi
 
 - `~/.zshrc` sources `~/.zshrc.local`
 - `~/.gitconfig` includes `~/.gitconfig.local`
-- Presets check for `~/.dotpkg/presets/<name>.local.sh` before applying
+- Presets source `~/.dotpkg/presets/<category>.local.sh` **after** applying the preset
 
 `.local` files are never tracked in git. They allow per-machine environment variables, paths, credentials, and preference overrides without diverging from shared config.
+
+### Preset Override Precedence
+
+When `dotpkg_preset <category>` is called:
+
+1. **Preset runs first** — applies all `defaults write` commands with parameters from the bundle
+2. **`.local.sh` sources after** — any `defaults write` in the `.local` file overwrites the preset's value
+3. **State recorded** — `<category>` added to `installed_presets` in state.json
+
+Example:
+
+```bash
+# In bundle's defaults.sh
+dotpkg_preset keyboard --key-repeat 2 --initial-key-repeat 15
+# Writes: KeyRepeat=2, InitialKeyRepeat=15
+
+# On one machine: ~/.dotpkg/presets/keyboard.local.sh
+defaults write NSGlobalDomain KeyRepeat -int 1
+# Overwrites to: KeyRepeat=1 (faster on this machine)
+```
+
+The preset's other values (InitialKeyRepeat=15, auto-capitalize=false, etc.) remain unchanged. Only explicitly overridden keys are replaced.
 
 
 ## State Tracking
@@ -463,7 +480,7 @@ AI agents can use dotpkg to:
 - Profiles (requirement lists with root bundle + tool bundles)
 - Bundle sources: local, user remotes, GitHub shorthand
 - Presets: built-in curated set (TBD: signatures and values per category), personal-only and convention-only
-- Helpers: personal-only (wallpaper, terminal, hotkeys, keyboard/finder/trackpad/menubar/accent-color/screenshot presets); bundle-scoped (dock add/clear/set)
+- Helpers: personal-only (wallpaper, terminal, hotkeys, keyboard/finder/trackpad/menubar/accent-color/screenshot presets); bundle-scoped (dock)
 - Local state tracking (~/.dotpkg/state.json) with stow path tracking per bundle
 - Machine-local overrides (.local pattern)
 - Dependency resolution: visited-set traversal (logs warnings on cycles, deduplicates diamonds)
@@ -488,6 +505,7 @@ AI agents can use dotpkg to:
 - Custom presets defined in bundles
 - Per-formula adoption (interactive per-formula mode for adopt --brew)
 - Hot corner fine-grained assignment beyond disable
+- Dock item removal (currently add-only)
 - Preset signatures (TBD)
 - Helper implementation details (TBD)
 
