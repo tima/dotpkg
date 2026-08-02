@@ -221,12 +221,19 @@ dotpkg_hotkey_set_corner() {
 
 dotpkg_dock() {
   local subcmd="${1:-}"
-  [[ -z "$subcmd" ]] && { echo "usage: dotpkg_dock add <app> [<app> ...]" >&2; return 1; }
+  [[ -z "$subcmd" ]] && { echo "usage: dotpkg_dock <add|clear|set> <app> [<app> ...]" >&2; return 1; }
   shift
   case "$subcmd" in
-    add) _dock_add "$@" ;;
+    add)   _dock_add "$@" ;;
+    clear) _dock_clear ;;
+    set)   _dock_clear && _dock_add "$@" ;;
     *) echo "dotpkg_dock: unknown subcommand: $subcmd" >&2; return 1 ;;
   esac
+}
+
+_dock_clear() {
+  defaults write com.apple.dock persistent-apps -array
+  killall Dock 2>/dev/null || true
 }
 
 _dock_add() {

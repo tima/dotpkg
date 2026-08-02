@@ -89,4 +89,8 @@ bash tests/test_integration_phase2.sh
 bash tests/test_helpers.sh
 ```
 
-All suites must pass (currently 135 assertions across 4 files). No framework — plain bash with assert helpers and mocked system commands.
+All suites must pass (currently 150 assertions across 4 files). No framework — plain bash with assert helpers and mocked system commands.
+
+## Change Log
+
+**2026-08-02**: Added dock helpers (clear, set) per refactor analysis gap #1. All tests pass (150 assertions).

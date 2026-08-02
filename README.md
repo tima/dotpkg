@@ -222,7 +222,9 @@ Hot corner action values: `0`=none, `2`=mission-control, `3`=show-application-wi
 **Dock:**
 
 ```bash
-dotpkg_dock add "Visual Studio Code" "Figma" "iTerm"
+dotpkg_dock add "Visual Studio Code" "Figma" "iTerm"  # append apps
+dotpkg_dock clear                                      # remove all apps
+dotpkg_dock set "Visual Studio Code" "iTerm"           # replace dock contents
 ```
 
 **Wallpaper and terminal:**

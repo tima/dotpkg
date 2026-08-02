@@ -394,6 +394,41 @@ assert_false "adopt: file outside HOME returns 1" \
 export HOME="$_REAL_HOME"
 
 # ---------------------------------------------------------------------------
+# dotpkg_dock clear/set
+# ---------------------------------------------------------------------------
+reset_logs
+
+# Mock find to return fake app paths
+find() {
+  if [[ "$*" == *"Visual Studio Code.app"* ]]; then
+    echo "/Applications/Visual Studio Code.app"
+  elif [[ "$*" == *"Figma.app"* ]]; then
+    echo "/Applications/Figma.app"
+  fi
+}
+export -f find
+
+dotpkg_dock clear
+assert_true "dock clear: persistent-apps -array written" \
+  defaults_called_with "com.apple.dock persistent-apps -array"
+assert_true "dock clear: Dock restarted" \
+  grep -q "killall Dock" "$KILLALL_LOG"
+
+reset_logs
+dotpkg_dock add "Visual Studio Code" "Figma"
+assert_true "dock add: Visual Studio Code added" \
+  defaults_called_with "persistent-apps -array-add"
+assert_true "dock add: Dock restarted" \
+  grep -q "killall Dock" "$KILLALL_LOG"
+
+reset_logs
+dotpkg_dock set "Visual Studio Code"
+assert_true "dock set: clears first" \
+  defaults_called_with "persistent-apps -array"
+assert_true "dock set: adds after clear" \
+  defaults_called_with "persistent-apps -array-add"
+
+# ---------------------------------------------------------------------------
 # Summary
 # ---------------------------------------------------------------------------
 echo ""

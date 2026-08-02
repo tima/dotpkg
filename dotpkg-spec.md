@@ -288,7 +288,9 @@ Preset categories with example parameter usage (signatures TBD):
 
 - `dotpkg_hotkey_disable <name>` -- disable system hotkeys (e.g., `spotlight`, `mission-control`)
 - `dotpkg_hotkey_set_corner <position> <action>` -- configure hot corners (TBD: position and action enums)
-- `dotpkg_dock add <app-name> [<app-name> ...]` -- add apps to the dock
+- `dotpkg_dock add <app-name> [<app-name> ...]` -- append apps to the dock
+- `dotpkg_dock clear` -- remove all apps from the dock
+- `dotpkg_dock set <app-name> [<app-name> ...]` -- replace dock contents (clear + add)
 - `dotpkg_wallpaper <path>` -- set desktop wallpaper across all spaces/displays
 - `dotpkg_terminal_import <path-to-terminal-file>` -- import and set as default terminal theme
 
@@ -458,7 +460,7 @@ AI agents can use dotpkg to:
 - Profiles (requirement lists with root bundle + tool bundles)
 - Bundle sources: local, user remotes, GitHub shorthand
 - Presets: built-in curated set (TBD: signatures and values per category), personal-only and convention-only
-- Helpers: personal-only (wallpaper, terminal, hotkeys, keyboard/finder/trackpad/menubar/accent-color/screenshot presets); bundle-scoped (dock)
+- Helpers: personal-only (wallpaper, terminal, hotkeys, keyboard/finder/trackpad/menubar/accent-color/screenshot presets); bundle-scoped (dock add/clear/set)
 - Local state tracking (~/.dotpkg/state.json) with stow path tracking per bundle
 - Machine-local overrides (.local pattern)
 - Dependency resolution: visited-set traversal (logs warnings on cycles, deduplicates diamonds)
@@ -483,7 +485,6 @@ AI agents can use dotpkg to:
 - Custom presets defined in bundles
 - Per-formula adoption (interactive per-formula mode for adopt --brew)
 - Hot corner fine-grained assignment beyond disable
-- Dock item removal (currently add-only)
 - Preset signatures (TBD)
 - Helper implementation details (TBD)
 
