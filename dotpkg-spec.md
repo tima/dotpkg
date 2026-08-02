@@ -152,7 +152,9 @@ A shell script that applies macOS presets and system configuration. dotpkg sourc
 - `dotpkg_terminal_import` — set terminal theme (personal, not tool-specific)
 
 **Bundle helpers** (any bundle):
-- `dotpkg_dock add <app> [<app> ...]` — add apps to dock (tool bundles add their apps)
+- `dotpkg_dock add <app> [<app> ...]` — append apps to dock
+- `dotpkg_dock clear` — remove all apps from dock
+- `dotpkg_dock set <app> [<app> ...]` — replace dock contents (clear then add)
 - `dotpkg_preset` for non-personal categories (TBD: which are bundle-scoped)
 
 **Convention vs. enforcement:**
@@ -171,7 +173,8 @@ dotpkg_terminal_import ~/dotfiles/themes/catppuccin-mocha.terminal
 Example (tool bundle):
 ```
 #!/bin/bash
-dotpkg_dock add "Visual Studio Code" Handbrake
+dotpkg_dock set "Visual Studio Code" "Handbrake"  # replace dock
+# or: dotpkg_dock add "Visual Studio Code"        # append to existing
 ```
 
 ### extensions.txt
