@@ -145,34 +145,61 @@ stow/
 
 A shell script that applies macOS presets and system configuration. dotpkg sources this file (`. defaults.sh`) into its own process, making preset and helper functions available. Sourced with fail-fast behavior: any non-zero exit aborts the bundle install.
 
-**Personal-only helpers** (root bundle only):
-- `dotpkg_preset` — keyboard, finder, trackpad, display, accent-color, screenshot-location, menubar (personal settings apply to all machines)
-- `dotpkg_hotkey_*` — disable/set hotkeys (personal choice, not tied to bundles)
-- `dotpkg_wallpaper` — set desktop wallpaper (personal identity, consistent across machines)
-- `dotpkg_terminal_import` — set terminal theme (personal, not tool-specific)
+**Principle: Bundles configure apps, not the system.**
 
-**Bundle helpers** (any bundle):
-- `dotpkg_dock add <app> [<app> ...]` — add apps to dock (tool bundles add their apps)
-- `dotpkg_preset` for non-personal categories (TBD: which are bundle-scoped)
+Bundles package an app/tool + that app's configuration. They do not configure the operating system, keyboard settings, finder behavior, wallpaper, or other personal preferences. System configuration belongs in the root bundle (personal settings).
 
-**Convention vs. enforcement:**
-Presets and helpers are the recommended path, but `defaults.sh` can contain arbitrary bash, raw `defaults write` calls, or anything else. dotpkg does not validate or restrict. Use helpers for safety and idempotency; raw commands are your responsibility.
+**Personal bundles only** (root + local `bundles/`):
+- Can have `defaults.sh` with full access to presets, helpers, and raw bash
+- Can call `dotpkg_preset` (keyboard, finder, dock, trackpad, screenshots, display, menubar, accent-color, spotlight, privacy)
+- Can call `dotpkg_hotkey_disable`, `dotpkg_hotkey_set_corner`
+- Can call `dotpkg_wallpaper`, `dotpkg_terminal_import`
+- Can call `dotpkg_dock add|clear|set`
+- Can execute arbitrary bash and `defaults write` for any domain
+- User owns this code — user's responsibility
 
-Example (personal bundle):
+**Remote bundles** (user sources + GitHub shorthand):
+- **defaults.sh is NOT executed** — file is ignored if present
+- No code execution from remote bundles
+- If bundle install prints "Note: defaults.sh skipped (remote bundle)", check bundle README for manual setup steps
+- Configure apps ONLY via:
+  - `stow/` — config files symlinked into app directories
+  - `extensions.txt` — editor extensions installed via marketplace
+  - `themes/` — theme files copied to app-specific locations
+  - `Brewfile` — packages installed via Homebrew
+
+**Why remote bundles cannot run defaults.sh:**
+- Bash is Turing-complete — cannot be safely sandboxed without complex enforcement
+- User would need to audit every line of bash to spot malice (unrealistic)
+- Most app config uses files anyway (VS Code settings.json, iTerm prefs, etc.) — handled by `stow/`
+- Apps requiring `defaults write` can document commands in bundle README; user reviews and adds to personal `defaults.sh` manually
+- Security > convenience — if bundle can't be 100% automated, that's acceptable
+- No remote code execution = no attack surface
+
+**If a remote bundle needs `defaults write`:**
+Bundle author documents required commands in README. User reviews, then adds to their personal root bundle `defaults.sh`.
+
+Example README for a remote bundle:
+```markdown
+## Manual Setup (Optional)
+
+Add to your personal defaults.sh if you want iTerm to use the Nord profile by default:
+
+    defaults write com.googlecode.iterm2 "Default Bookmark Guid" -string "nord-profile-guid"
 ```
+
+Example (personal bundle — root or local):
+```bash
 #!/bin/bash
 dotpkg_preset keyboard --key-repeat 2 --initial-key-repeat 15
 dotpkg_preset finder
 dotpkg_hotkey_disable spotlight
 dotpkg_wallpaper ~/dotfiles/wallpapers/nord_polarnight_4.png
 dotpkg_terminal_import ~/dotfiles/themes/catppuccin-mocha.terminal
+dotpkg_dock set "iTerm" "Visual Studio Code" "Figma"
 ```
 
-Example (tool bundle):
-```
-#!/bin/bash
-dotpkg_dock add "Visual Studio Code" Handbrake
-```
+Personal bundles in local `bundles/` can also have `defaults.sh` (you control the code, full trust).
 
 ### extensions.txt
 
@@ -269,28 +296,39 @@ git@github.internal:team/bundles.git
 
 **Helpers** are functions that handle complex operations — dock manipulation, wallpaper setting, hotkey configuration, terminal import — without exposing the underlying plist/defaults complexity.
 
-### Built-in Presets (TBD: values and parameter signatures)
+**All presets and most helpers are personal-only** — they configure the system, not individual apps. Remote bundles (user sources + GitHub shorthand) cannot call them.
 
-Preset categories with example parameter usage (signatures TBD):
+### Built-in Presets (personal bundles only)
+
+Preset categories with example parameter usage:
 
 - keyboard -- `dotpkg_preset keyboard --key-repeat N --initial-key-repeat N`
-- trackpad -- `dotpkg_preset trackpad [--enable-tap-to-click true|false]`
-- dock -- `dotpkg_preset dock --icon-size N`
+- trackpad -- `dotpkg_preset trackpad [--enable-tap-to-click] [--enable-force-click]`
+- dock -- `dotpkg_preset dock --icon-size N --auto-hide BOOL`
 - finder -- `dotpkg_preset finder`
 - screenshots -- `dotpkg_preset screenshots --location PATH`
 - display -- `dotpkg_preset display --screensaver-idle SECONDS`
-- menubar -- `dotpkg_preset menubar [--show-battery-percentage true|false]`
+- menubar -- `dotpkg_preset menubar [--show-battery-percentage BOOL]`
 - accent-color -- `dotpkg_preset accent-color --value COLOR`
-- spotlight -- `dotpkg_preset spotlight [--disable-web-search true|false]`
-- privacy -- `dotpkg_preset privacy [--disable-analytics true|false]`
+- spotlight -- `dotpkg_preset spotlight` (no-op placeholder)
+- privacy -- `dotpkg_preset privacy [--disable-analytics BOOL]`
 
-### Built-in Helpers (TBD: implementation details)
+**Restriction:** `dotpkg_preset` is blocked in remote bundles. Personal/local bundles only.
 
+### Built-in Helpers
+
+**Personal-only helpers** (root + local bundles):
 - `dotpkg_hotkey_disable <name>` -- disable system hotkeys (e.g., `spotlight`, `mission-control`)
-- `dotpkg_hotkey_set_corner <position> <action>` -- configure hot corners (TBD: position and action enums)
-- `dotpkg_dock add <app-name> [<app-name> ...]` -- add apps to the dock
+- `dotpkg_hotkey_set_corner <position> <action>` -- configure hot corners (tl|tr|bl|br, action IDs 0-14)
+- `dotpkg_dock clear` -- remove all apps from dock
+- `dotpkg_dock set <app> [<app> ...]` -- replace dock contents (clear + add)
 - `dotpkg_wallpaper <path>` -- set desktop wallpaper across all spaces/displays
 - `dotpkg_terminal_import <path-to-terminal-file>` -- import and set as default terminal theme
+
+**Remote-safe helpers** (any bundle):
+- `dotpkg_dock add <app-name> [<app-name> ...]` -- append apps to dock (suggests apps from bundle's Brewfile)
+
+**Restriction enforcement:** Personal-only helpers check `$DOTPKG_RESTRICTED` and abort with an error if called from a remote bundle.
 
 Users can override individual values within a preset using the `.local` pattern (see Machine-Local Overrides below).
 
@@ -478,18 +516,24 @@ AI agents can use dotpkg to:
 - Bundle format: bundle.info, Brewfile, stow/, defaults.sh, extensions.txt, themes/, requires.txt
 - Root bundle (personal settings) always auto-installs unconditionally
 - Profiles (requirement lists with root bundle + tool bundles)
-- Bundle sources: local, user remotes, GitHub shorthand
-- Presets: built-in curated set (TBD: signatures and values per category), personal-only and convention-only
-- Helpers: personal-only (wallpaper, terminal, hotkeys, keyboard/finder/trackpad/menubar/accent-color/screenshot presets); bundle-scoped (dock)
+- Bundle sources: local (personal), user remotes (no code execution), GitHub shorthand (no code execution)
+- Presets: built-in curated set, personal bundles only (root + local `bundles/`)
+- Helpers: personal bundles only (all presets, wallpaper, terminal, hotkeys, dock)
+- **Bundle execution security model:**
+  - Personal bundles (root + local `bundles/`): unrestricted — defaults.sh executed with full access to presets, helpers, raw `defaults write`, arbitrary bash
+  - Remote bundles (sources + GitHub): **defaults.sh NOT executed** — file ignored, no code execution from remote bundles
+  - Remote bundles configure apps via `stow/` (config files), `extensions.txt` (editor extensions), `themes/` (copied files), `Brewfile` (packages)
+  - Apps needing `defaults write`: bundle README documents commands, user reviews and adds to personal defaults.sh manually
+  - Zero remote code execution = zero attack surface
 - Local state tracking (~/.dotpkg/state.json) with stow path tracking per bundle
 - Machine-local overrides (.local pattern)
 - Dependency resolution: visited-set traversal (logs warnings on cycles, deduplicates diamonds)
 - Stow conflict pre-check: fetch remotes, then `stow --simulate`, abort with named conflict if detected
-- GitHub shorthand trust model: full bundle preview + explicit y confirmation; user remotes (sources) are trusted and skip preview
+- GitHub shorthand trust model: full bundle preview + explicit y confirmation; user remotes (sources) are trusted and skip preview (but still restricted)
 - Extension failure categorization: unavailable (warn+continue), other errors (abort)
 - Theme re-copy: unconditional on every sync, no cleanup (use `.local` for per-machine paths)
 - Brewfile semantics: `brew bundle` without `--upgrade` for both add and update; version management is separate
-- defaults.sh sourced with fail-fast (non-zero exit aborts bundle install); convention-only preset/helper usage, arbitrary bash allowed
+- defaults.sh sourced with fail-fast (non-zero exit aborts bundle install); personal bundles unrestricted, remote bundles restricted
 - gum-based interactive prompts
 - Non-interactive mode via flags for all commands
 - --json flag on status

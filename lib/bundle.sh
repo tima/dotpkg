@@ -223,11 +223,15 @@ install_bundle() {
     stow_paths=$(find "$bundle_dir/stow" -maxdepth 1 -mindepth 1 -exec basename {} \; 2>/dev/null | tr '\n' ' ')
   fi
 
-  # 4. defaults.sh — sourced with fail-fast (set -e propagates from parent)
+  # 4. defaults.sh — personal bundles only (remote bundles cannot execute code)
   if [[ -f "$bundle_dir/defaults.sh" ]]; then
-    echo "  [defaults] applying presets..."
-    # shellcheck disable=SC1090
-    . "$bundle_dir/defaults.sh"
+    if [[ "$source" == "local" ]]; then
+      echo "  [defaults] applying presets..."
+      # shellcheck disable=SC1090
+      . "$bundle_dir/defaults.sh"
+    else
+      echo "  [defaults] skipped (remote bundle) — see bundle README for manual setup" >&2
+    fi
   fi
 
   # 5. Editor extensions
