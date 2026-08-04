@@ -136,9 +136,7 @@ install_extensions() {
   local ext_file="$1"
   local editors=()
 
-  command -v code   &>/dev/null && editors+=(code)
-  command -v cursor &>/dev/null && editors+=(cursor)
-  command -v codium &>/dev/null && editors+=(codium)
+  for _ed in code cursor codium; do command -v "$_ed" &>/dev/null && editors+=("$_ed"); done
 
   if [[ ${#editors[@]} -eq 0 ]]; then
     echo "  no compatible editor found — skipping extensions"
