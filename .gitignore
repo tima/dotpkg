@@ -5,6 +5,13 @@
 # Working/scratch files
 raw/
 
+# Security/validation audit docs (working files, not committed)
+SPEC-VALIDATION.md
+SPEC-VALIDATION-FACTCHECK.md
+SPEC-CONSISTENCY.md
+REMEDIATION-*.md
+SECURITY-REVIEW*.md
+
 # OS/editor artifacts
 .DS_Store
 *.swp
