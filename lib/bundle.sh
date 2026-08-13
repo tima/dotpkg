@@ -26,6 +26,84 @@ _source_cache_key() {
   echo "$repo"
 }
 
+_validate_git_url() {
+  local url="$1"
+
+  # Reject dangerous schemes and path patterns immediately
+  case "$url" in
+    file://*|git://*|http://*|ftp://*|ssh://*|sftp://*|rsync://*)
+      return 1
+      ;;
+    /*|../*|./*)
+      # Reject absolute paths, relative paths with ../ or ./
+      return 1
+      ;;
+  esac
+
+  # Reject URLs with shell metacharacters (command injection prevention)
+  if [[ "$url" == *'$'* || "$url" == *'`'* || "$url" == *';'* || "$url" == *'|'* || "$url" == *'&'* || "$url" == *'('* || "$url" == *')'* ]]; then
+    return 1
+  fi
+
+  # Now check for valid schemes
+  case "$url" in
+    https://*)
+      # https URLs: must have proper structure https://domain[/path]
+      # First, verify we have at least domain.something to prevent https:/invalid-url
+      if ! [[ "$url" =~ \. ]]; then
+        # Domain must contain at least one dot (github.com, etc.) OR be a simple hostname
+        # But if no dot, it must be a valid single hostname (alphanumeric+hyphens only)
+        [[ "$url" =~ ^https://[a-zA-Z0-9]+(-[a-zA-Z0-9]+)*(/.*)?$ ]] || return 1
+      fi
+
+      local domain_part="${url#https://}"
+      domain_part="${domain_part%%/*}"  # Extract just the domain:port part
+
+      # Domain must be alphanumeric with dots and hyphens, but not start/end with dot or hyphen
+      if ! [[ "$domain_part" =~ ^[a-zA-Z0-9]([a-zA-Z0-9.-]*[a-zA-Z0-9])?$ ]]; then
+        # Also allow single char or with optional :port
+        [[ "$domain_part" =~ ^[a-zA-Z0-9]([a-zA-Z0-9.-]*[a-zA-Z0-9])?:[0-9]+$ ]] || [[ "$domain_part" =~ ^[a-zA-Z0-9]:[0-9]+$ ]] || return 1
+      fi
+
+      # Path (if present) can only contain alphanumerics, slash, hyphen, underscore, dot
+      local path_part="${url#https://$domain_part}"
+      if [[ -n "$path_part" ]]; then
+        [[ "$path_part" =~ ^/[a-zA-Z0-9._/-]*$ ]] || return 1
+      fi
+
+      return 0
+      ;;
+    git@*)
+      # SSH format: git@host:user/repo
+      [[ "$url" =~ ^git@[a-zA-Z0-9][a-zA-Z0-9.-]*[a-zA-Z0-9]:[a-zA-Z0-9._/-]+$ ]] && return 0
+      [[ "$url" =~ ^git@[a-zA-Z0-9]:[a-zA-Z0-9._/-]+$ ]] && return 0  # single char domain
+      return 1
+      ;;
+    [a-zA-Z0-9._-]*/[a-zA-Z0-9._-]*)
+      # Plain user/repo shorthand (will be normalized to github.com)
+      # GitHub usernames can contain dots, but we reject URLs that look like bare domains
+      # Reject if contains :// or .. or ./ or looks like a malformed scheme
+      [[ "$url" == *://* || "$url" == *..* || "$url" == *./* ]] && return 1
+      # Reject if looks like a scheme (contains : before the slash, e.g., https:/)
+      [[ "$url" == *:/* ]] && return 1
+
+      # Reject bare domains like attacker.com/repo
+      # If user part looks like a domain (ends with known TLD), reject it
+      local user_part="${url%%/*}"
+      case "$user_part" in
+        *.com|*.org|*.net|*.edu|*.gov|*.io|*.co|*.uk|*.de|*.fr|*.ru|*.cn|*.in|*.au|*.jp|*.br|*.mx|*.ca|*.tv|*.info|*.us)
+          return 1
+          ;;
+      esac
+      return 0
+      ;;
+    *)
+      # Reject anything else
+      return 1
+      ;;
+  esac
+}
+
 _clone_source() {
   local repo="$1" cache_dir="$2"
   local url
@@ -35,6 +113,13 @@ _clone_source() {
   else
     url="$repo"
   fi
+
+  # Validate URL before attempting clone
+  if ! _validate_git_url "$url"; then
+    echo "dotpkg: invalid or unsafe git URL (only https://, git@, or user/repo allowed): $repo" >&2
+    return 1
+  fi
+
   echo "dotpkg: cloning source: $repo..."
   mkdir -p "$(dirname "$cache_dir")"
   git clone --quiet "$url" "$cache_dir"
@@ -198,14 +283,24 @@ install_bundle() {
 
   # 1. Dependencies (visited-set prevents cycles)
   if [[ -f "$bundle_dir/requires.txt" ]]; then
-    local dep dep_dir
+    local dep dep_dir dep_source
     while IFS= read -r dep; do
       [[ -z "$dep" || "$dep" == \#* ]] && continue
       if ! dep_dir=$(resolve_bundle "$dep"); then
         echo "dotpkg: dependency not found: $dep (required by $name)" >&2
         return 1
       fi
-      install_bundle "$dep_dir" "$source"
+
+      # Re-evaluate dependency's actual source based on resolved location
+      if [[ "$dep_dir" == "$DOTFILES_DIR"* ]]; then
+        # Resolved to local bundle or profile (under DOTFILES_DIR)
+        dep_source="local"
+      else
+        # Resolved via sources cache or GitHub — treat as remote
+        dep_source="remote"
+      fi
+
+      install_bundle "$dep_dir" "$dep_source"
     done < "$bundle_dir/requires.txt"
   fi
 
@@ -223,7 +318,7 @@ install_bundle() {
     stow_target="${stow_target:-$HOME}"
     stow_target="${stow_target/#\~/$HOME}"
     echo "  [stow] linking configs -> $stow_target..."
-    stow_check "$bundle_dir" "$stow_target"
+    stow_check "$bundle_dir" "$stow_target" || return 1
     stow_apply "$bundle_dir" "$stow_target"
     stow_paths=$(find "$bundle_dir/stow" -maxdepth 1 -mindepth 1 -exec basename {} \; 2>/dev/null | tr '\n' ' ')
   fi
