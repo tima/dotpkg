@@ -7,6 +7,7 @@ state_init() {
   [[ -s "$STATE_FILE" ]] && return
   mkdir -p "$(dirname "$STATE_FILE")"
   printf '{"installed_bundles":[],"installed_presets":[]}\n' > "$STATE_FILE"
+  chmod 600 "$STATE_FILE"
 }
 
 state_bundle_installed() {
