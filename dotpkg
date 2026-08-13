@@ -107,13 +107,14 @@ cmd_sync() {
   _DOTPKG_VISITED=""
   echo "Syncing installed bundles..."
 
-  local names bundle_dir
+  local names bundle_dir bundle_source
   names=$(state_list_bundles)
 
   while IFS= read -r name; do
     [[ -z "$name" ]] && continue
     if bundle_dir=$(resolve_bundle "$name" 2>/dev/null); then
-      install_bundle "$bundle_dir" "local"
+      bundle_source=$(state_get_bundle_source "$name" 2>/dev/null || echo "local")
+      install_bundle "$bundle_dir" "$bundle_source"
     else
       echo "  skipping missing bundle: $name" >&2
     fi

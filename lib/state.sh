@@ -67,6 +67,20 @@ for b in s["installed_bundles"]: print(b["name"])
 EOF
 }
 
+state_get_bundle_source() {
+  local name="$1"
+  python3 - "$name" "$STATE_FILE" <<'EOF'
+import json, sys
+name, f = sys.argv[1], sys.argv[2]
+with open(f) as fh: s = json.load(fh)
+for b in s["installed_bundles"]:
+    if b["name"] == name:
+        print(b.get("source", "local"))
+        sys.exit(0)
+sys.exit(1)
+EOF
+}
+
 state_get_json() {
   cat "$STATE_FILE"
 }
