@@ -478,6 +478,31 @@ assert_false "_validate_git_url: reject command injection attempt" \
   _validate_git_url "https://github.com/user/repo\$(whoami)"
 
 # ---------------------------------------------------------------------------
+# _check_url_credentials: Git credentials detection (MEDIUM-11 fix)
+# ---------------------------------------------------------------------------
+
+assert_true  "_check_url_credentials: https URL without credentials" \
+  _check_url_credentials "https://github.com/user/repo"
+
+assert_true  "_check_url_credentials: git@ SSH without credentials" \
+  _check_url_credentials "git@github.com:user/repo"
+
+assert_true  "_check_url_credentials: user/repo shorthand" \
+  _check_url_credentials "user/repo"
+
+assert_false "_check_url_credentials: reject https with embedded password" \
+  _check_url_credentials "https://user:password@github.com/repo"
+
+assert_false "_check_url_credentials: reject https with embedded token" \
+  _check_url_credentials "https://user:ghp_abc123xyz@github.com/repo"
+
+assert_false "_check_url_credentials: reject https with complex password" \
+  _check_url_credentials "https://admin:P@ss123!@gitlab.com/repo"
+
+assert_false "_check_url_credentials: reject git@ with embedded credentials" \
+  _check_url_credentials "git@user:password@github.com:repo"
+
+# ---------------------------------------------------------------------------
 # _clone_source: integration with validation
 # ---------------------------------------------------------------------------
 
@@ -541,6 +566,17 @@ _test_clone_shorthand() {
 }
 
 assert_true "_clone_source: user/repo shorthand accepted" _test_clone_shorthand
+
+# Test: embedded credentials should be rejected early (MEDIUM-11)
+_test_clone_credentials_rejected() {
+  local tmp_cache=$(mktemp -d)
+  ! _clone_source "https://user:password@github.com/repo" "$tmp_cache/should-fail" 2>/dev/null
+  local result=$?
+  rm -rf "$tmp_cache"
+  return $result
+}
+
+assert_true "_clone_source: URLs with embedded credentials rejected" _test_clone_credentials_rejected
 
 # ---------------------------------------------------------------------------
 # stow conflict detection tests (CRITICAL-4: make conflicts fatal)
@@ -1013,6 +1049,306 @@ EOF
 }
 
 assert_true "stow_target: remote bundle with safe path works" _test_stow_target_remote_safe
+
+# ---------------------------------------------------------------------------
+# bundle name validation tests (MEDIUM-10: reject special characters)
+# ---------------------------------------------------------------------------
+
+# Valid bundle names (alphanumeric, dots, underscores, hyphens, slashes)
+assert_true  "_validate_bundle_name: simple name" \
+  _validate_bundle_name "mytool"
+assert_true  "_validate_bundle_name: name with hyphen" \
+  _validate_bundle_name "my-tool"
+assert_true  "_validate_bundle_name: name with underscore" \
+  _validate_bundle_name "my_tool"
+assert_true  "_validate_bundle_name: name with dot" \
+  _validate_bundle_name "my.tool"
+assert_true  "_validate_bundle_name: user/repo (GitHub shorthand)" \
+  _validate_bundle_name "user/repo"
+assert_true  "_validate_bundle_name: user/repo-name with hyphens" \
+  _validate_bundle_name "user/repo-name"
+assert_true  "_validate_bundle_name: user_name/repo_name with underscores" \
+  _validate_bundle_name "user_name/repo_name"
+assert_true  "_validate_bundle_name: user.name/repo.name with dots" \
+  _validate_bundle_name "user.name/repo.name"
+assert_true  "_validate_bundle_name: numeric names" \
+  _validate_bundle_name "v2"
+assert_true  "_validate_bundle_name: mixed: user/repo-v2_beta.1" \
+  _validate_bundle_name "user/repo-v2_beta.1"
+
+# Invalid bundle names (special characters that could corrupt state.json)
+assert_false "_validate_bundle_name: reject hash" \
+  _validate_bundle_name "my#tool"
+assert_false "_validate_bundle_name: reject dollar" \
+  _validate_bundle_name 'my$tool'
+assert_false "_validate_bundle_name: reject asterisk" \
+  _validate_bundle_name "my*tool"
+assert_false "_validate_bundle_name: reject space" \
+  _validate_bundle_name "my tool"
+assert_false "_validate_bundle_name: reject newline" \
+  _validate_bundle_name $'my\ntool'
+assert_false "_validate_bundle_name: reject semicolon" \
+  _validate_bundle_name "my;tool"
+assert_false "_validate_bundle_name: reject pipe" \
+  _validate_bundle_name "my|tool"
+assert_false "_validate_bundle_name: reject ampersand" \
+  _validate_bundle_name "my&tool"
+assert_false "_validate_bundle_name: reject backtick" \
+  _validate_bundle_name 'my`tool'
+assert_false "_validate_bundle_name: reject quote" \
+  _validate_bundle_name "my'tool"
+assert_false "_validate_bundle_name: reject double quote" \
+  _validate_bundle_name 'my"tool'
+assert_false "_validate_bundle_name: reject backslash" \
+  _validate_bundle_name 'my\tool'
+assert_false "_validate_bundle_name: reject angle bracket" \
+  _validate_bundle_name "my<tool"
+assert_false "_validate_bundle_name: reject parenthesis" \
+  _validate_bundle_name "my(tool"
+assert_false "_validate_bundle_name: reject curly brace" \
+  _validate_bundle_name "my{tool"
+assert_false "_validate_bundle_name: reject square bracket" \
+  _validate_bundle_name "my[tool"
+assert_false "_validate_bundle_name: reject equals" \
+  _validate_bundle_name "my=tool"
+assert_false "_validate_bundle_name: reject plus" \
+  _validate_bundle_name "my+tool"
+assert_false "_validate_bundle_name: reject percent" \
+  _validate_bundle_name "my%tool"
+assert_false "_validate_bundle_name: reject at sign" \
+  _validate_bundle_name "my@tool"
+assert_false "_validate_bundle_name: reject tilde" \
+  _validate_bundle_name "my~tool"
+assert_false "_validate_bundle_name: reject colon" \
+  _validate_bundle_name "my:tool"
+assert_false "_validate_bundle_name: reject comma" \
+  _validate_bundle_name "my,tool"
+assert_false "_validate_bundle_name: reject question mark" \
+  _validate_bundle_name "my?tool"
+
+# Edge cases
+assert_false "_validate_bundle_name: empty string" \
+  _validate_bundle_name ""
+
+# Test resolve_bundle with invalid name
+_test_resolve_bundle_invalid_name() {
+  if resolve_bundle "bad#name" 2>/dev/null; then
+    return 1
+  fi
+  return 0
+}
+
+assert_true "resolve_bundle: invalid name rejected" _test_resolve_bundle_invalid_name
+
+# ---------------------------------------------------------------------------
+# MEDIUM-14: Pre-validation tests (no state changes on failure)
+# ---------------------------------------------------------------------------
+
+# Test: Pre-validation catches unresolvable dependencies before state changes
+_test_prevalidation_dependency_fails() {
+  local test_bundle=$(mktemp -d)
+
+  # Create bundle with broken dependency
+  cat > "$test_bundle/bundle.info" <<EOF
+name=broken-dep-bundle
+description=Bundle with unresolvable dependency
+type=bundle
+EOF
+  echo "nonexistent-dep" > "$test_bundle/requires.txt"
+
+  # Reset state
+  STATE_FILE=$(mktemp)
+  . "$DOTPKG_HOME/lib/state.sh"
+  state_init
+
+  _DOTPKG_VISITED=""
+
+  # Attempt to install — should fail without modifying state
+  if ! install_bundle "$test_bundle" "local" 2>/dev/null; then
+    # Verify bundle was NOT added to state
+    if ! state_bundle_installed "broken-dep-bundle"; then
+      rm -rf "$test_bundle" "$STATE_FILE"
+      return 0
+    fi
+  fi
+
+  rm -rf "$test_bundle" "$STATE_FILE"
+  return 1
+}
+
+assert_true "MEDIUM-14: pre-validation prevents state change on dep failure" \
+  _test_prevalidation_dependency_fails
+
+# Test: Pre-validation validates all dependencies before modifying state
+_test_prevalidation_validates_all_deps() {
+  local test_bundle=$(mktemp -d)
+  local dep1_dir="$DOTFILES_DIR/bundles/valid-dep"
+  local dep2_notexist="nonexistent-dep-12345"
+
+  # Create first valid dependency
+  mkdir -p "$dep1_dir"
+  cat > "$dep1_dir/bundle.info" <<EOF
+name=valid-dep
+description=Valid dependency
+type=bundle
+EOF
+
+  # Create parent bundle with one valid and one invalid dependency
+  cat > "$test_bundle/bundle.info" <<EOF
+name=multi-dep-bundle
+description=Bundle with mixed valid/invalid deps
+type=bundle
+EOF
+  cat > "$test_bundle/requires.txt" <<EOF
+valid-dep
+$dep2_notexist
+EOF
+
+  # Reset state
+  STATE_FILE=$(mktemp)
+  . "$DOTPKG_HOME/lib/state.sh"
+  state_init
+
+  _DOTPKG_VISITED=""
+
+  # Attempt to install — should fail during pre-validation (before any state changes)
+  if ! install_bundle "$test_bundle" "local" 2>/dev/null; then
+    # Verify neither bundle nor dependency was added to state
+    if ! state_bundle_installed "multi-dep-bundle" && ! state_bundle_installed "valid-dep"; then
+      rm -rf "$test_bundle" "$dep1_dir" "$STATE_FILE"
+      return 0
+    fi
+  fi
+
+  rm -rf "$test_bundle" "$dep1_dir" "$STATE_FILE"
+  return 1
+}
+
+assert_true "MEDIUM-14: pre-validation validates all deps before state changes" \
+  _test_prevalidation_validates_all_deps
+
+# Test: Pre-validation detects stow conflicts before state changes
+_test_prevalidation_stow_conflicts() {
+  local test_bundle=$(mktemp -d)
+  local test_target=$(mktemp -d)
+
+  # Create bundle with stow directory
+  mkdir -p "$test_bundle/stow/config"
+  echo "bundle config" > "$test_bundle/stow/config/bashrc"
+
+  # Create bundle.info
+  cat > "$test_bundle/bundle.info" <<EOF
+name=conflict-prevalidation-bundle
+description=Bundle with stow conflicts
+EOF
+
+  # Pre-create conflicting file at target with different content
+  mkdir -p "$test_target/config"
+  echo "existing config" > "$test_target/config/bashrc"
+
+  # Reset state
+  STATE_FILE=$(mktemp)
+  . "$DOTPKG_HOME/lib/state.sh"
+  state_init
+
+  _DOTPKG_VISITED=""
+
+  # Attempt to install with custom stow_target
+  if ! install_bundle "$test_bundle" "local" 2>/dev/null; then
+    # Verify bundle was NOT added to state
+    if ! state_bundle_installed "conflict-prevalidation-bundle"; then
+      # Verify target file was NOT modified
+      if grep -q "existing config" "$test_target/config/bashrc" 2>/dev/null; then
+        rm -rf "$test_bundle" "$test_target" "$STATE_FILE"
+        return 0
+      fi
+    fi
+  fi
+
+  rm -rf "$test_bundle" "$test_target" "$STATE_FILE"
+  return 1
+}
+
+assert_true "MEDIUM-14: pre-validation catches stow conflicts before state change" \
+  _test_prevalidation_stow_conflicts
+
+# Test: Pre-validation catches invalid stow_target for remote bundle
+_test_prevalidation_invalid_stow_target_remote() {
+  local test_bundle=$(mktemp -d)
+
+  # Create bundle with stow directory
+  mkdir -p "$test_bundle/stow/config"
+  echo "config" > "$test_bundle/stow/config/test"
+
+  # Create bundle.info with stow_target outside HOME
+  cat > "$test_bundle/bundle.info" <<EOF
+name=invalid-stow-remote
+description=Remote bundle with invalid stow_target
+type=bundle
+stow_target=/tmp/malicious
+EOF
+
+  # Reset state
+  STATE_FILE=$(mktemp)
+  . "$DOTPKG_HOME/lib/state.sh"
+  state_init
+
+  _DOTPKG_VISITED=""
+
+  # Attempt to install as remote — should fail in pre-validation
+  if ! install_bundle "$test_bundle" "remote" 2>/dev/null; then
+    # Verify bundle was NOT added to state
+    if ! state_bundle_installed "invalid-stow-remote"; then
+      rm -rf "$test_bundle" "$STATE_FILE"
+      return 0
+    fi
+  fi
+
+  rm -rf "$test_bundle" "$STATE_FILE"
+  return 1
+}
+
+assert_true "MEDIUM-14: pre-validation rejects invalid remote stow_target before state change" \
+  _test_prevalidation_invalid_stow_target_remote
+
+# Test: Pre-validation catches invalid theme_target for remote bundle
+_test_prevalidation_invalid_theme_target_remote() {
+  local test_bundle=$(mktemp -d)
+
+  # Create bundle with themes directory
+  mkdir -p "$test_bundle/themes/nord"
+  echo "theme" > "$test_bundle/themes/nord/colors"
+
+  # Create bundle.info with theme_target outside HOME
+  cat > "$test_bundle/bundle.info" <<EOF
+name=invalid-theme-remote
+description=Remote bundle with invalid theme_target
+type=bundle
+theme_target=/etc/themes
+EOF
+
+  # Reset state
+  STATE_FILE=$(mktemp)
+  . "$DOTPKG_HOME/lib/state.sh"
+  state_init
+
+  _DOTPKG_VISITED=""
+
+  # Attempt to install as remote — should fail in pre-validation
+  if ! install_bundle "$test_bundle" "remote" 2>/dev/null; then
+    # Verify bundle was NOT added to state
+    if ! state_bundle_installed "invalid-theme-remote"; then
+      rm -rf "$test_bundle" "$STATE_FILE"
+      return 0
+    fi
+  fi
+
+  rm -rf "$test_bundle" "$STATE_FILE"
+  return 1
+}
+
+assert_true "MEDIUM-14: pre-validation rejects invalid remote theme_target before state change" \
+  _test_prevalidation_invalid_theme_target_remote
 
 # ---------------------------------------------------------------------------
 # Summary

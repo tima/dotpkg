@@ -4,6 +4,11 @@
 # Visited-set — reset before each top-level install
 _DOTPKG_VISITED=""
 
+_validate_bundle_name() {
+  local name="$1"
+  [[ "$name" =~ ^[a-zA-Z0-9._/-]+$ ]] || return 1
+}
+
 _bundle_visited() {
   [[ ":${_DOTPKG_VISITED}:" == *":${1}:"* ]]
 }
@@ -104,6 +109,17 @@ _validate_git_url() {
   esac
 }
 
+_check_url_credentials() {
+  local url="$1"
+  # Pattern: :[^@]*@ means colon followed by any non-@ chars, then @ (e.g., :password@)
+  if [[ "$url" =~ :[^@]*@ ]]; then
+    echo "dotpkg: WARNING: source URL contains embedded credentials (username:password@) — this is a security risk" >&2
+    echo "         Use SSH key auth or GitHub tokens instead" >&2
+    return 1
+  fi
+  return 0
+}
+
 _validate_target_path() {
   local path="$1" for_remote="${2:-false}"
 
@@ -139,6 +155,11 @@ _clone_source() {
     url="$repo"
   fi
 
+  # Check for credentials in URL BEFORE validation (MEDIUM-11 fix)
+  if ! _check_url_credentials "$url"; then
+    return 1
+  fi
+
   # Validate URL before attempting clone
   if ! _validate_git_url "$url"; then
     echo "dotpkg: invalid or unsafe git URL (only https://, git@, or user/repo allowed): $repo" >&2
@@ -153,6 +174,12 @@ _clone_source() {
 # Resolution order: local bundles/ -> profiles/ -> sources -> GitHub shorthand
 resolve_bundle() {
   local name="$1"
+
+  # Validate bundle name first
+  if ! _validate_bundle_name "$name"; then
+    echo "dotpkg: invalid bundle name: $name (alphanumeric, dots, underscores, hyphens, slashes only)" >&2
+    return 1
+  fi
 
   # 0. Root bundle — DOTFILES_DIR itself (not in bundles/ subdir)
   if [[ -f "$DOTFILES_DIR/bundle.info" ]]; then
@@ -302,9 +329,79 @@ install_bundle() {
     echo "dotpkg: (already processed: $name)"
     return 0
   fi
-  _bundle_visit "$name"
 
   echo "dotpkg: installing $name..."
+
+  # MEDIUM-14: Pre-validate all steps before making any changes
+  # Validate bundle.json (implicitly valid if we got this far)
+  # Validate dependencies exist and are resolvable
+  if [[ -f "$bundle_dir/requires.txt" ]]; then
+    local dep
+    while IFS= read -r dep; do
+      [[ -z "$dep" || "$dep" == \#* ]] && continue
+      if ! resolve_bundle "$dep" >/dev/null 2>&1; then
+        echo "dotpkg: dependency not found: $dep (required by $name)" >&2
+        return 1
+      fi
+    done < "$bundle_dir/requires.txt"
+  fi
+
+  # Validate stow paths if present
+  if [[ -d "$bundle_dir/stow" ]]; then
+    local stow_target
+    stow_target=$(bundle_info_get "$bundle_dir" stow_target 2>/dev/null || true)
+    stow_target="${stow_target:-$HOME}"
+    stow_target="${stow_target/#\~/$HOME}"
+
+    # For remote bundles, validate stow_target path
+    if [[ "$source" == "remote" ]]; then
+      if ! _validate_target_path "$stow_target" "true"; then
+        echo "dotpkg: stow_target must be under \$HOME for remote bundles" >&2
+        echo "         Invalid: $stow_target" >&2
+        return 1
+      fi
+    fi
+
+    # Check for stow conflicts BEFORE any state changes (MEDIUM-14)
+    if ! stow_check "$bundle_dir" "$stow_target"; then
+      return 1
+    fi
+  fi
+
+  # Validate theme paths if present
+  if [[ -d "$bundle_dir/themes" ]]; then
+    local theme_target
+    theme_target=$(bundle_info_get "$bundle_dir" theme_target 2>/dev/null || true)
+    if [[ -n "$theme_target" ]]; then
+      # For remote bundles, validate theme_target path
+      if [[ "$source" == "remote" ]]; then
+        if ! _validate_target_path "$theme_target" "true"; then
+          echo "dotpkg: theme_target must be under \$HOME for remote bundles" >&2
+          echo "         Invalid: $theme_target" >&2
+          return 1
+        fi
+      fi
+    fi
+  fi
+
+  # Validate Brewfile syntax if present (basic check: file readable)
+  if [[ -f "$bundle_dir/Brewfile" ]]; then
+    if [[ ! -r "$bundle_dir/Brewfile" ]]; then
+      echo "dotpkg: Brewfile not readable in $bundle_dir" >&2
+      return 1
+    fi
+  fi
+
+  # Validate defaults.sh is readable if present
+  if [[ -f "$bundle_dir/defaults.sh" ]]; then
+    if [[ ! -r "$bundle_dir/defaults.sh" ]]; then
+      echo "dotpkg: defaults.sh not readable in $bundle_dir" >&2
+      return 1
+    fi
+  fi
+
+  # All pre-validation passed — mark as visited and proceed with installation
+  _bundle_visit "$name"
 
   # 1. Dependencies (visited-set prevents cycles)
   if [[ -f "$bundle_dir/requires.txt" ]]; then
@@ -335,7 +432,7 @@ install_bundle() {
     brew bundle --file="$bundle_dir/Brewfile" --no-upgrade
   fi
 
-  # 3. Stow — conflict check then apply
+  # 3. Stow — apply (already checked in pre-validation phase)
   local stow_paths=""
   if [[ -d "$bundle_dir/stow" ]]; then
     local stow_target
@@ -343,17 +440,7 @@ install_bundle() {
     stow_target="${stow_target:-$HOME}"
     stow_target="${stow_target/#\~/$HOME}"
 
-    # For remote bundles, validate stow_target path
-    if [[ "$source" == "remote" ]]; then
-      if ! _validate_target_path "$stow_target" "true"; then
-        echo "dotpkg: stow_target must be under \$HOME for remote bundles" >&2
-        echo "         Invalid: $stow_target" >&2
-        return 1
-      fi
-    fi
-
     echo "  [stow] linking configs -> $stow_target..."
-    stow_check "$bundle_dir" "$stow_target" || return 1
     stow_apply "$bundle_dir" "$stow_target"
     stow_paths=$(find "$bundle_dir/stow" -maxdepth 1 -mindepth 1 -exec basename {} \; 2>/dev/null | tr '\n' ' ')
   fi
@@ -375,20 +462,11 @@ install_bundle() {
     install_extensions "$bundle_dir"
   fi
 
-  # 6. Themes — always re-copy unconditionally (idempotent by design)
+  # 6. Themes — always re-copy unconditionally (idempotent by design, already validated in pre-check)
   if [[ -d "$bundle_dir/themes" ]]; then
     local theme_target
     theme_target=$(bundle_info_get "$bundle_dir" theme_target 2>/dev/null || true)
     if [[ -n "$theme_target" ]]; then
-      # For remote bundles, validate theme_target path
-      if [[ "$source" == "remote" ]]; then
-        if ! _validate_target_path "$theme_target" "true"; then
-          echo "dotpkg: theme_target must be under \$HOME for remote bundles" >&2
-          echo "         Invalid: $theme_target" >&2
-          return 1
-        fi
-      fi
-
       theme_target="${theme_target/#\~/$HOME}"
       mkdir -p "$theme_target"
       cp -r "$bundle_dir/themes/." "$theme_target/"

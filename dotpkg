@@ -77,6 +77,11 @@ cmd_add() {
   local bundle_name="${1:-}"
   [[ -z "$bundle_name" ]] && { echo "usage: dotpkg add <bundle>" >&2; exit 1; }
 
+  if ! _validate_bundle_name "$bundle_name"; then
+    echo "dotpkg: invalid bundle name: $bundle_name (alphanumeric, dots, underscores, hyphens, slashes only)" >&2
+    exit 1
+  fi
+
   state_init
   _DOTPKG_VISITED=""
 
@@ -271,6 +276,12 @@ cmd_update() {
 cmd_create() {
   local name="${1:-}"
   [[ -z "$name" ]] && { echo "usage: dotpkg create <name>" >&2; exit 1; }
+
+  if ! _validate_bundle_name "$name"; then
+    echo "dotpkg: invalid bundle name: $name (alphanumeric, dots, underscores, hyphens, slashes only)" >&2
+    exit 1
+  fi
+
   local bundle_dir="$DOTFILES_DIR/bundles/$name"
   if [[ -d "$bundle_dir" ]]; then
     echo "dotpkg: bundle already exists: $bundle_dir" >&2; return 1
