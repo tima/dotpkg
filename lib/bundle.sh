@@ -35,6 +35,9 @@ _validate_git_url() {
   local url="$1"
 
   # Reject dangerous schemes and path patterns immediately
+  # Note: git+https:// and git+ssh:// variants are not explicitly listed here because
+  # they don't match any of the three valid case branches below (https://, git@, or user/repo),
+  # so they naturally fall through to the final rejection at line ~107.
   case "$url" in
     file://*|git://*|http://*|ftp://*|ssh://*|sftp://*|rsync://*)
       return 1
@@ -413,7 +416,11 @@ install_bundle() {
         return 1
       fi
 
-      # Re-evaluate dependency's actual source based on resolved location
+      # Re-evaluate dependency's actual source based on resolved location.
+      # This prevents privilege escalation where a remote bundle could install a local bundle's code.
+      # Source is determined by filesystem location, not inherited from parent bundle.
+      # Local: resolved under DOTFILES_DIR (user's dotfiles repo)
+      # Remote: resolved in cache or via sources (external GitHub/repo)
       if [[ "$dep_dir" == "$DOTFILES_DIR"* ]]; then
         # Resolved to local bundle or profile (under DOTFILES_DIR)
         dep_source="local"
