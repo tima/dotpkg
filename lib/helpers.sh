@@ -270,7 +270,7 @@ dotpkg_wallpaper() {
   # Ventura and older: SQLite Dock database
   local db="$HOME/Library/Application Support/Dock/desktoppicture.db"
   if [[ -f "$db" ]]; then
-    sqlite3 "$db" "update data set value = '${path}'" 2>/dev/null || true
+    sqlite3 "$db" "update data set value = '${path//\'/\'\'}'" 2>/dev/null || true
     killall Dock 2>/dev/null || true
   fi
 

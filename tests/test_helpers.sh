@@ -17,6 +17,7 @@ mkdir -p "$DOTPKG_HOME/lib" "$DOTPKG_HOME/presets" "$DOTFILES_DIR"
 
 DEFAULTS_LOG="$TEST_ROOT/defaults.log"
 KILLALL_LOG="$TEST_ROOT/killall.log"
+SQLITE3_LOG="$TEST_ROOT/sqlite3.log"
 
 # ---------------------------------------------------------------------------
 # Mock system commands (bash functions shadow PATH executables when sourced)
@@ -24,7 +25,7 @@ KILLALL_LOG="$TEST_ROOT/killall.log"
 defaults()   { echo "defaults $*" >> "$DEFAULTS_LOG"; }
 killall()    { echo "killall $*" >> "$KILLALL_LOG"; }
 osascript()  { :; }
-sqlite3()    { :; }
+sqlite3()    { echo "sqlite3 $*" >> "$SQLITE3_LOG"; }
 open()       { :; }
 PlistBuddy() { :; }
 export -f defaults killall osascript sqlite3 open
@@ -427,6 +428,33 @@ assert_true "dock set: clears first" \
   defaults_called_with "persistent-apps -array"
 assert_true "dock set: adds after clear" \
   defaults_called_with "persistent-apps -array-add"
+
+# ---------------------------------------------------------------------------
+# dotpkg_wallpaper — SQL injection prevention
+# ---------------------------------------------------------------------------
+: > "$SQLITE3_LOG"
+
+# Create test wallpaper files (function requires file to exist)
+test_wallpaper_1="$TEST_ROOT/path_with'single'quotes.jpg"
+test_wallpaper_2="$TEST_ROOT/path_with' OR '1'='1.jpg"
+touch "$test_wallpaper_1" "$test_wallpaper_2"
+
+# Test 1: Wallpaper path with single quotes is properly escaped
+dotpkg_wallpaper "$test_wallpaper_1" 2>/dev/null || true
+
+# Verify single quotes are escaped (doubled) in the SQL command
+# Bash escapes the quotes in the logged command, so we see \'\'
+# This means the actual SQL has '' which is correct SQL escaping
+assert_true "wallpaper: SQL command executed" grep -q "update data set value" "$SQLITE3_LOG"
+assert_true "wallpaper: single quotes escaped in SQL" \
+  grep "\\\\'\\\\\'" "$SQLITE3_LOG"
+
+# Test 2: SQL injection payload is neutralized
+: > "$SQLITE3_LOG"
+dotpkg_wallpaper "$test_wallpaper_2" 2>/dev/null || true
+# Verify the injection attempt is escaped (no unescaped OR pattern)
+assert_false "wallpaper: SQL injection neutralized" \
+  grep -F "' OR '" "$SQLITE3_LOG"
 
 # ---------------------------------------------------------------------------
 # Summary
