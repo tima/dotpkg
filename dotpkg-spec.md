@@ -203,14 +203,31 @@ Personal bundles in local `bundles/` can also have `defaults.sh` (you control th
 
 ### extensions.txt
 
-Editor extension IDs, one per line. dotpkg detects which compatible editors are installed (VS Code, Cursor, Codium) and runs the appropriate install command for each. Extension IDs are shared across these editors where available.
+Editor extension IDs, one per line. dotpkg detects which compatible editors are installed (VS Code, Cursor, Codium) and installs extensions for each.
+
+**Per-editor files:** Marketplaces differ between editors. Create editor-specific files to install different extensions per editor:
+
+- `extensions.vscode.txt` — VS Code only (takes precedence over generic)
+- `extensions.cursor.txt` — Cursor only
+- `extensions.codium.txt` — Codium only
+- `extensions.txt` — fallback for any editor without a specific file
+
+If no editor-specific file exists for an editor, dotpkg uses `extensions.txt`. If neither exists, no extensions are installed for that editor.
+
+**Example structure:**
+```
+extensions.vscode.txt      # VS Code extensions (VS Code marketplace)
+extensions.cursor.txt      # Cursor extensions (Cursor marketplace)
+extensions.codium.txt      # Codium extensions (Codium marketplace)
+```
 
 **Error handling:** Extension install failures are categorized:
-- **Unavailable** (not in marketplace) — emit a named warning, skip, continue install
+- **Unavailable** (not in editor's marketplace) — emit a named warning, skip, continue install
 - **Other failures** (network, auth, command error) — abort bundle install, user must fix and retry
 
 This distinguishes between expected missing extensions and unexpected infrastructure problems.
 
+Example `extensions.vscode.txt`:
 ```
 arcticicestudio.nord-visual-studio-code
 ms-python.python

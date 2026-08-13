@@ -89,9 +89,13 @@ bash tests/test_integration_phase2.sh
 bash tests/test_helpers.sh
 ```
 
-All suites must pass (currently 163 assertions across 5 files). No framework — plain bash with assert helpers and mocked system commands.
+All suites must pass (currently 170 assertions across 5 files). No framework — plain bash with assert helpers and mocked system commands.
 
 ## Change Log
+
+**2026-08-04**: 
+- Shrunk editor detection loop (-2 lines via ponytail review)
+- Added per-editor extension files (extensions.vscode.txt, extensions.cursor.txt, extensions.codium.txt) with fallback to generic extensions.txt. Different editors, different marketplaces. Total: 170 assertions across 5 test files.
 
 **2026-08-03**: Implemented bundle security model — remote bundles (sources + GitHub shorthand) cannot execute defaults.sh. Zero remote code execution. Added test_security.sh (13 assertions). Total: 163 assertions across 5 test files.
 

@@ -253,11 +253,21 @@ The preset's other values (InitialKeyRepeat, auto-capitalize, etc.) remain uncha
 
 Editor extension IDs, one per line. dotpkg detects installed editors (VS Code, Cursor, Codium) and installs for each. Extensions unavailable in the marketplace emit a warning and are skipped; other failures (network, auth) abort the install.
 
+**Per-editor files:** Use separate files when marketplaces differ:
+- `extensions.vscode.txt` — VS Code only
+- `extensions.cursor.txt` — Cursor only
+- `extensions.codium.txt` — Codium only
+- `extensions.txt` — fallback for any editor without a specific file
+
 ```
+# extensions.vscode.txt
 arcticicestudio.nord-visual-studio-code
 ms-python.python
 redhat.vscode-yaml
 github.copilot
+
+# extensions.cursor.txt
+saoudrizp.claude-dev
 ```
 
 ### themes/

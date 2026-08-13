@@ -133,7 +133,7 @@ _fetch_github_bundle() {
 }
 
 install_extensions() {
-  local ext_file="$1"
+  local bundle_dir="$1"
   local editors=()
 
   for _ed in code cursor codium; do command -v "$_ed" &>/dev/null && editors+=("$_ed"); done
@@ -143,26 +143,33 @@ install_extensions() {
     return 0
   fi
 
-  local ext err_file
+  local err_file
   err_file=$(mktemp)
   # shellcheck disable=SC2064
   trap "rm -f '$err_file'" RETURN
 
-  while IFS= read -r ext; do
-    [[ -z "$ext" || "$ext" == \#* ]] && continue
-    local editor
-    for editor in "${editors[@]}"; do
+  local editor
+  for editor in "${editors[@]}"; do
+    local ext_file
+    local map_name="$editor"
+    [[ "$editor" == "code" ]] && map_name="vscode"
+    ext_file="$bundle_dir/extensions.${map_name}.txt"
+    [[ ! -f "$ext_file" ]] && ext_file="$bundle_dir/extensions.txt"
+    [[ ! -f "$ext_file" ]] && continue
+
+    while IFS= read -r ext; do
+      [[ -z "$ext" || "$ext" == \#* ]] && continue
       if ! "$editor" --install-extension "$ext" --force >"$err_file" 2>&1; then
         if grep -qi "not found\|not exist\|unavailable\|not be found" "$err_file"; then
-          echo "  warning: extension unavailable (skipping): $ext" >&2
+          echo "  warning: extension unavailable in $editor (skipping): $ext" >&2
         else
-          echo "dotpkg: extension install error: $ext" >&2
+          echo "dotpkg: extension install error in $editor: $ext" >&2
           cat "$err_file" >&2
           return 1
         fi
       fi
-    done
-  done < "$ext_file"
+    done < "$ext_file"
+  done
 }
 
 install_bundle() {
@@ -232,10 +239,10 @@ install_bundle() {
     fi
   fi
 
-  # 5. Editor extensions
-  if [[ -f "$bundle_dir/extensions.txt" ]]; then
+  # 5. Editor extensions (per-editor or generic)
+  if [[ -f "$bundle_dir/extensions.txt" ]] || [[ -f "$bundle_dir/extensions.vscode.txt" ]] || [[ -f "$bundle_dir/extensions.cursor.txt" ]] || [[ -f "$bundle_dir/extensions.codium.txt" ]]; then
     echo "  [extensions] installing..."
-    install_extensions "$bundle_dir/extensions.txt"
+    install_extensions "$bundle_dir"
   fi
 
   # 6. Themes — always re-copy unconditionally (idempotent by design)

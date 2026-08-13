@@ -201,6 +201,73 @@ rm -rf "$MINIMAL_BUNDLE" "$DEP_BUNDLE" "$PARENT_BUNDLE"
 rm -rf "$DOTFILES_DIR/bundles/depbundle"
 
 # ---------------------------------------------------------------------------
+# install_extensions: per-editor files with fallback
+# ---------------------------------------------------------------------------
+
+EXT_BUNDLE=$(mktemp -d)
+mkdir -p "$EXT_BUNDLE"
+cat > "$EXT_BUNDLE/bundle.info" <<'EOF'
+name=ext-test
+type=bundle
+EOF
+
+# Mock editor commands
+code() { echo "code: $*" >> "$TEST_EXTS_LOG"; }
+cursor() { echo "cursor: $*" >> "$TEST_EXTS_LOG"; }
+codium() { echo "codium: $*" >> "$TEST_EXTS_LOG"; }
+export -f code cursor codium
+
+TEST_EXTS_LOG=$(mktemp)
+trap "rm -f '$TEST_EXTS_LOG'" RETURN
+
+# Test 1: generic extensions.txt (all editors get same list)
+cat > "$EXT_BUNDLE/extensions.txt" <<'EOF'
+ms-python.python
+# comment line
+EOF
+
+install_extensions "$EXT_BUNDLE" >/dev/null 2>&1 || true
+code_calls=$(grep -c "^code:" "$TEST_EXTS_LOG" || true)
+cursor_calls=$(grep -c "^cursor:" "$TEST_EXTS_LOG" || true)
+assert_eq "install_extensions: generic file installs for code" "$code_calls" "1"
+assert_eq "install_extensions: generic file installs for cursor" "$cursor_calls" "1"
+
+# Test 2: per-editor files (vscode overrides generic)
+rm "$TEST_EXTS_LOG"
+cat > "$EXT_BUNDLE/extensions.vscode.txt" <<'EOF'
+arcticicestudio.nord-visual-studio-code
+EOF
+
+install_extensions "$EXT_BUNDLE" >/dev/null 2>&1 || true
+code_calls=$(grep -c "^code:" "$TEST_EXTS_LOG" || true)
+cursor_calls=$(grep -c "^cursor:" "$TEST_EXTS_LOG" || true)
+assert_eq "install_extensions: vscode.txt overrides for code" "$code_calls" "1"
+assert_eq "install_extensions: cursor still gets generic" "$cursor_calls" "1"
+
+# Test 3: all three per-editor files (no generic)
+rm "$TEST_EXTS_LOG"
+rm "$EXT_BUNDLE/extensions.txt"
+cat > "$EXT_BUNDLE/extensions.vscode.txt" <<'EOF'
+ms-python.python
+EOF
+cat > "$EXT_BUNDLE/extensions.cursor.txt" <<'EOF'
+saoudrizp.claude-dev
+EOF
+cat > "$EXT_BUNDLE/extensions.codium.txt" <<'EOF'
+ms-vscode-remote.remote-ssh
+EOF
+
+install_extensions "$EXT_BUNDLE" >/dev/null 2>&1 || true
+code_calls=$(grep -c "^code:" "$TEST_EXTS_LOG" || true)
+cursor_calls=$(grep -c "^cursor:" "$TEST_EXTS_LOG" || true)
+codium_calls=$(grep -c "^codium:" "$TEST_EXTS_LOG" || true)
+assert_eq "install_extensions: per-editor code" "$code_calls" "1"
+assert_eq "install_extensions: per-editor cursor" "$cursor_calls" "1"
+assert_eq "install_extensions: per-editor codium" "$codium_calls" "1"
+
+rm -rf "$EXT_BUNDLE"
+
+# ---------------------------------------------------------------------------
 # Summary
 # ---------------------------------------------------------------------------
 echo ""
