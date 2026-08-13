@@ -1,0 +1,14 @@
+# Tool-specific configuration
+.agents/
+.claude/
+
+# Working/scratch files
+raw/
+
+# OS/editor artifacts
+.DS_Store
+*.swp
+*.swo
+*~
+.vscode/
+.idea/
