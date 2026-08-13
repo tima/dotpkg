@@ -430,7 +430,7 @@ assert_true "dock set: adds after clear" \
   defaults_called_with "persistent-apps -array-add"
 
 # ---------------------------------------------------------------------------
-# dotpkg_wallpaper — SQL injection prevention
+# dotpkg_wallpaper — SQL injection prevention (with system state preservation)
 # ---------------------------------------------------------------------------
 : > "$SQLITE3_LOG"
 
@@ -438,6 +438,14 @@ assert_true "dock set: adds after clear" \
 test_wallpaper_1="$TEST_ROOT/path_with'single'quotes.jpg"
 test_wallpaper_2="$TEST_ROOT/path_with' OR '1'='1.jpg"
 touch "$test_wallpaper_1" "$test_wallpaper_2"
+
+# Save current wallpaper state to restore after tests
+saved_plist="$TEST_ROOT/saved_wallpaper.plist"
+saved_db="$TEST_ROOT/saved_wallpaper.db"
+plist_path="$HOME/Library/Application Support/com.apple.wallpaper/Store/Index.plist"
+db_path="$HOME/Library/Application Support/Dock/desktoppicture.db"
+[[ -f "$plist_path" ]] && cp "$plist_path" "$saved_plist"
+[[ -f "$db_path" ]] && cp "$db_path" "$saved_db"
 
 # Test 1: Wallpaper path with single quotes is properly escaped
 dotpkg_wallpaper "$test_wallpaper_1" 2>/dev/null || true
@@ -455,6 +463,10 @@ dotpkg_wallpaper "$test_wallpaper_2" 2>/dev/null || true
 # Verify the injection attempt is escaped (no unescaped OR pattern)
 assert_false "wallpaper: SQL injection neutralized" \
   grep -F "' OR '" "$SQLITE3_LOG"
+
+# Restore wallpaper state
+[[ -f "$saved_plist" ]] && cp "$saved_plist" "$plist_path" && killall WallpaperAgent 2>/dev/null || true
+[[ -f "$saved_db" ]] && cp "$saved_db" "$db_path" && killall Dock 2>/dev/null || true
 
 # ---------------------------------------------------------------------------
 # Summary
