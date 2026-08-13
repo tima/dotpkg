@@ -104,6 +104,31 @@ _validate_git_url() {
   esac
 }
 
+_validate_target_path() {
+  local path="$1" for_remote="${2:-false}"
+
+  # Reject explicit path traversal patterns (.. and ./)
+  if [[ "$path" == *"../"* ]] || [[ "$path" == *"/.."* ]] || [[ "$path" == *"/./"* ]]; then
+    return 1
+  fi
+
+  # For remote bundles, restrict to $HOME
+  if [[ "$for_remote" == "true" ]]; then
+    # Expand tilde to actual home path
+    local expanded_path="${path/#\~/$HOME}"
+
+    # After expansion, must be under $HOME or equal to $HOME
+    if [[ "$expanded_path" == "$HOME" ]] || [[ "$expanded_path" == "$HOME"/* ]]; then
+      return 0
+    else
+      # Outside $HOME
+      return 1
+    fi
+  fi
+
+  return 0
+}
+
 _clone_source() {
   local repo="$1" cache_dir="$2"
   local url
@@ -317,6 +342,16 @@ install_bundle() {
     stow_target=$(bundle_info_get "$bundle_dir" stow_target 2>/dev/null || true)
     stow_target="${stow_target:-$HOME}"
     stow_target="${stow_target/#\~/$HOME}"
+
+    # For remote bundles, validate stow_target path
+    if [[ "$source" == "remote" ]]; then
+      if ! _validate_target_path "$stow_target" "true"; then
+        echo "dotpkg: stow_target must be under \$HOME for remote bundles" >&2
+        echo "         Invalid: $stow_target" >&2
+        return 1
+      fi
+    fi
+
     echo "  [stow] linking configs -> $stow_target..."
     stow_check "$bundle_dir" "$stow_target" || return 1
     stow_apply "$bundle_dir" "$stow_target"
@@ -345,6 +380,15 @@ install_bundle() {
     local theme_target
     theme_target=$(bundle_info_get "$bundle_dir" theme_target 2>/dev/null || true)
     if [[ -n "$theme_target" ]]; then
+      # For remote bundles, validate theme_target path
+      if [[ "$source" == "remote" ]]; then
+        if ! _validate_target_path "$theme_target" "true"; then
+          echo "dotpkg: theme_target must be under \$HOME for remote bundles" >&2
+          echo "         Invalid: $theme_target" >&2
+          return 1
+        fi
+      fi
+
       theme_target="${theme_target/#\~/$HOME}"
       mkdir -p "$theme_target"
       cp -r "$bundle_dir/themes/." "$theme_target/"

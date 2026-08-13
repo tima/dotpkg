@@ -54,6 +54,11 @@ assert_eq() {
 
 state_init
 assert_true  "state_init creates file"        test -f "$STATE_FILE"
+
+# Verify state file permissions are 600 (owner-only read/write)
+perms=$(stat -f %A "$STATE_FILE" 2>/dev/null || stat -c %a "$STATE_FILE" 2>/dev/null || echo "ERROR")
+assert_eq    "state_init: file permissions 600" "$perms" "600"
+
 assert_false "empty state: foo not installed" state_bundle_installed "foo"
 
 state_add_bundle "foo" "local"
@@ -625,6 +630,389 @@ EOF
 }
 
 assert_true "stow conflict: error message reported" _test_stow_conflict_error_reported
+
+# ---------------------------------------------------------------------------
+# symlink detection tests (HIGH-8: reject symlinks in stow/)
+# ---------------------------------------------------------------------------
+
+# Test: bundle with symlinks in stow/ fails to install
+_test_symlink_rejection() {
+  local test_bundle=$(mktemp -d)
+  local test_target=$(mktemp -d)
+
+  # Create bundle with stow/ directory containing a symlink
+  mkdir -p "$test_bundle/stow/config"
+  echo "regular file" > "$test_bundle/stow/config/bashrc"
+  ln -s "/etc/passwd" "$test_bundle/stow/config/symlink-to-passwd"
+
+  # Create bundle.info
+  cat > "$test_bundle/bundle.info" <<EOF
+name=symlink-bundle
+description=Bundle with malicious symlink
+EOF
+
+  # Reset state
+  STATE_FILE=$(mktemp)
+  . "$DOTPKG_HOME/lib/state.sh"
+  state_init
+
+  # Capture return value — install_bundle should fail
+  local ret=0
+  if install_bundle "$test_bundle" "local" 2>/dev/null; then
+    ret=$?
+  else
+    ret=$?
+  fi
+
+  # install_bundle should have failed (returned non-zero)
+  if [[ $ret -ne 0 ]]; then
+    rm -rf "$test_bundle" "$test_target" "$STATE_FILE"
+    return 0
+  fi
+
+  rm -rf "$test_bundle" "$test_target" "$STATE_FILE"
+  return 1
+}
+
+assert_true "symlink detection: bundle with symlinks in stow/ fails" _test_symlink_rejection
+
+# Test: verify error is reported for symlinks
+_test_symlink_error_reported() {
+  local test_bundle=$(mktemp -d)
+  local test_target=$(mktemp -d)
+
+  # Create bundle with symlink
+  mkdir -p "$test_bundle/stow/config"
+  echo "config" > "$test_bundle/stow/config/bashrc"
+  ln -s "/tmp/evil" "$test_bundle/stow/config/evil-symlink"
+
+  # Create bundle.info
+  cat > "$test_bundle/bundle.info" <<EOF
+name=symlink-error-bundle
+description=Bundle to test symlink error reporting
+EOF
+
+  # Reset state
+  STATE_FILE=$(mktemp)
+  . "$DOTPKG_HOME/lib/state.sh"
+  state_init
+
+  # Capture error output
+  local error_output
+  error_output=$(install_bundle "$test_bundle" "local" 2>&1) || true
+
+  # Error message should mention symlinks or security risk
+  if echo "$error_output" | grep -q "symlink\|security risk"; then
+    rm -rf "$test_bundle" "$test_target" "$STATE_FILE"
+    return 0
+  fi
+
+  rm -rf "$test_bundle" "$test_target" "$STATE_FILE"
+  return 1
+}
+
+assert_true "symlink detection: error message reported" _test_symlink_error_reported
+
+# ---------------------------------------------------------------------------
+# path validation tests (HIGH-9: reject path traversal in theme_target)
+# ---------------------------------------------------------------------------
+
+# Test: _validate_target_path helper function
+_test_validate_target_path_valid() {
+  # Valid paths should pass
+  _validate_target_path "$HOME/Library/Themes" "true" || return 1
+  _validate_target_path "~/.config/themes" "true" || return 1
+  _validate_target_path "$HOME" "true" || return 1
+  return 0
+}
+
+assert_true "_validate_target_path: valid home paths" _test_validate_target_path_valid
+
+# Test: _validate_target_path rejects path traversal
+_test_validate_target_path_traversal() {
+  # Path traversal should fail (even if technically under home)
+  _validate_target_path "~/Library/../../etc/themes" "true" && return 1
+  _validate_target_path "$HOME/Library/../../../etc" "true" && return 1
+  _validate_target_path "$HOME/Library/./themes" "true" && return 1
+  return 0
+}
+
+assert_true "_validate_target_path: rejects path traversal" _test_validate_target_path_traversal
+
+# Test: _validate_target_path rejects paths outside HOME for remote
+_test_validate_target_path_outside_home() {
+  # Absolute paths outside home should fail for remote
+  _validate_target_path "/tmp/themes" "true" && return 1
+  _validate_target_path "/etc/themes" "true" && return 1
+  return 0
+}
+
+assert_true "_validate_target_path: rejects paths outside HOME for remote" _test_validate_target_path_outside_home
+
+# Test: theme_target path traversal in remote bundle fails to install
+_test_theme_target_traversal_remote() {
+  local test_bundle=$(mktemp -d)
+  local test_target=$(mktemp -d)
+
+  # Create bundle with themes/ directory
+  mkdir -p "$test_bundle/themes/nord"
+  echo "nord theme colors" > "$test_bundle/themes/nord/colors.txt"
+
+  # Create bundle.info with malicious theme_target (path traversal)
+  cat > "$test_bundle/bundle.info" <<EOF
+name=evil-theme-bundle
+description=Bundle with malicious theme_target
+type=bundle
+theme_target=../../tmp/evil
+EOF
+
+  # Reset state
+  STATE_FILE=$(mktemp)
+  . "$DOTPKG_HOME/lib/state.sh"
+  state_init
+
+  # Attempt to install as remote bundle — should fail
+  local ret=0
+  if install_bundle "$test_bundle" "remote" 2>/dev/null; then
+    ret=$?
+  else
+    ret=$?
+  fi
+
+  # install_bundle should have failed (returned non-zero)
+  if [[ $ret -ne 0 ]]; then
+    rm -rf "$test_bundle" "$test_target" "$STATE_FILE"
+    return 0
+  fi
+
+  rm -rf "$test_bundle" "$test_target" "$STATE_FILE"
+  return 1
+}
+
+assert_true "theme_target: remote bundle with traversal fails" _test_theme_target_traversal_remote
+
+# Test: theme_target path traversal error is reported
+_test_theme_target_traversal_error_reported() {
+  local test_bundle=$(mktemp -d)
+  local test_target=$(mktemp -d)
+
+  # Create bundle with themes directory
+  mkdir -p "$test_bundle/themes/nord"
+  echo "theme" > "$test_bundle/themes/nord/colors.txt"
+
+  # Create bundle.info with path traversal in theme_target
+  cat > "$test_bundle/bundle.info" <<EOF
+name=error-theme-bundle
+description=To test error reporting
+type=bundle
+theme_target=../../../../etc/passwd
+EOF
+
+  # Reset state
+  STATE_FILE=$(mktemp)
+  . "$DOTPKG_HOME/lib/state.sh"
+  state_init
+
+  # Capture error output
+  local error_output
+  error_output=$(install_bundle "$test_bundle" "remote" 2>&1) || true
+
+  # Error message should mention theme_target validation
+  if echo "$error_output" | grep -q "theme_target"; then
+    rm -rf "$test_bundle" "$test_target" "$STATE_FILE"
+    return 0
+  fi
+
+  rm -rf "$test_bundle" "$test_target" "$STATE_FILE"
+  return 1
+}
+
+assert_true "theme_target: error message reported" _test_theme_target_traversal_error_reported
+
+# Test: local bundle with theme_target works fine (no restriction)
+_test_theme_target_local_allowed() {
+  local test_bundle=$(mktemp -d)
+  local test_target=$(mktemp -d)
+
+  # Create bundle with themes directory
+  mkdir -p "$test_bundle/themes/custom"
+  echo "custom theme" > "$test_bundle/themes/custom/style.txt"
+
+  # Create bundle.info with normal theme_target
+  cat > "$test_bundle/bundle.info" <<EOF
+name=local-theme-bundle
+description=Local bundle with theme_target
+type=bundle
+theme_target=$test_target
+EOF
+
+  # Reset state
+  STATE_FILE=$(mktemp)
+  . "$DOTPKG_HOME/lib/state.sh"
+  state_init
+
+  # Install as local bundle — should succeed
+  if install_bundle "$test_bundle" "local" 2>/dev/null; then
+    # Verify themes were copied
+    if [[ -f "$test_target/custom/style.txt" ]]; then
+      rm -rf "$test_bundle" "$test_target" "$STATE_FILE"
+      return 0
+    fi
+  fi
+
+  rm -rf "$test_bundle" "$test_target" "$STATE_FILE"
+  return 1
+}
+
+assert_true "theme_target: local bundle works fine" _test_theme_target_local_allowed
+
+# Test: remote bundle with safe theme_target works
+_test_theme_target_remote_safe() {
+  local test_bundle=$(mktemp -d)
+  local test_themes_dir="$HOME/.config/themes-test"
+
+  # Create bundle with themes directory
+  mkdir -p "$test_bundle/themes/nord"
+  echo "nord theme" > "$test_bundle/themes/nord/colors.txt"
+
+  # Create bundle.info with safe theme_target under HOME
+  cat > "$test_bundle/bundle.info" <<EOF
+name=safe-theme-bundle
+description=Remote bundle with safe theme_target
+type=bundle
+theme_target=~/.config/themes-test
+EOF
+
+  # Reset state
+  STATE_FILE=$(mktemp)
+  . "$DOTPKG_HOME/lib/state.sh"
+  state_init
+
+  # Install as remote bundle — should succeed
+  if install_bundle "$test_bundle" "remote" 2>/dev/null; then
+    # Verify themes were copied
+    if [[ -f "$test_themes_dir/nord/colors.txt" ]]; then
+      rm -rf "$test_bundle" "$test_themes_dir" "$STATE_FILE"
+      return 0
+    fi
+  fi
+
+  rm -rf "$test_bundle" "$test_themes_dir" "$STATE_FILE"
+  return 1
+}
+
+assert_true "theme_target: remote bundle with safe path works" _test_theme_target_remote_safe
+
+# ---------------------------------------------------------------------------
+# stow_target validation tests (CRITICAL-2: reject path traversal)
+# ---------------------------------------------------------------------------
+
+# Test: stow_target path traversal in remote bundle fails to install
+_test_stow_target_traversal_remote() {
+  local test_bundle=$(mktemp -d)
+  local test_target=$(mktemp -d)
+
+  # Create bundle with stow/ directory
+  mkdir -p "$test_bundle/stow/config"
+  echo "bundle config" > "$test_bundle/stow/config/bashrc"
+
+  # Create bundle.info with malicious stow_target (path traversal)
+  cat > "$test_bundle/bundle.info" <<EOF
+name=evil-stow-bundle
+description=Bundle with malicious stow_target
+type=bundle
+EOF
+
+  # Reset state
+  STATE_FILE=$(mktemp)
+  . "$DOTPKG_HOME/lib/state.sh"
+  state_init
+
+  # Attempt to install as remote bundle with traversal target — should fail
+  if ! install_bundle "$test_bundle" "remote" 2>/dev/null; then
+    # Check if actual stow wasn't applied
+    if [[ ! -f "$test_target/config/bashrc" ]]; then
+      rm -rf "$test_bundle" "$test_target" "$STATE_FILE"
+      return 0
+    fi
+  fi
+
+  rm -rf "$test_bundle" "$test_target" "$STATE_FILE"
+  return 1
+}
+
+# Test: remote bundle with stow_target outside HOME fails
+_test_stow_target_outside_home_remote() {
+  local test_bundle=$(mktemp -d)
+
+  # Create bundle with stow directory
+  mkdir -p "$test_bundle/stow/etc"
+  echo "malicious config" > "$test_bundle/stow/etc/evil"
+
+  # Create bundle.info with stow_target outside HOME
+  cat > "$test_bundle/bundle.info" <<EOF
+name=remote-stow-tmp
+description=Remote bundle targeting /tmp
+type=bundle
+stow_target=/tmp/evil-stow
+EOF
+
+  # Reset state
+  STATE_FILE=$(mktemp)
+  . "$DOTPKG_HOME/lib/state.sh"
+  state_init
+
+  # Attempt to install as remote bundle — should fail
+  if ! install_bundle "$test_bundle" "remote" 2>/dev/null; then
+    rm -rf "$test_bundle" "$STATE_FILE"
+    return 0
+  fi
+
+  rm -rf "$test_bundle" "$STATE_FILE"
+  return 1
+}
+
+assert_true "stow_target: remote bundle with /tmp target fails" _test_stow_target_outside_home_remote
+
+# Test: remote bundle with safe stow_target works
+_test_stow_target_remote_safe() {
+  local test_bundle=$(mktemp -d)
+  local test_stow_dir="$HOME/.config/dotfiles-test"
+
+  # Create stow target directory (required by stow)
+  mkdir -p "$test_stow_dir"
+
+  # Create bundle with stow directory
+  mkdir -p "$test_bundle/stow/config"
+  echo "my config" > "$test_bundle/stow/config/bashrc"
+
+  # Create bundle.info with safe stow_target under HOME
+  cat > "$test_bundle/bundle.info" <<EOF
+name=safe-stow-bundle
+description=Remote bundle with safe stow_target
+type=bundle
+stow_target=$test_stow_dir
+EOF
+
+  # Reset state
+  STATE_FILE=$(mktemp)
+  . "$DOTPKG_HOME/lib/state.sh"
+  state_init
+
+  # Install as remote bundle — should succeed
+  if install_bundle "$test_bundle" "remote" 2>/dev/null; then
+    # Verify stow was applied (either symlink or directory with files)
+    if [[ -L "$test_stow_dir/config" ]] || [[ -f "$test_stow_dir/config/bashrc" ]]; then
+      rm -rf "$test_bundle" "$test_stow_dir" "$STATE_FILE"
+      return 0
+    fi
+  fi
+
+  rm -rf "$test_bundle" "$test_stow_dir" "$STATE_FILE"
+  return 1
+}
+
+assert_true "stow_target: remote bundle with safe path works" _test_stow_target_remote_safe
 
 # ---------------------------------------------------------------------------
 # Summary
