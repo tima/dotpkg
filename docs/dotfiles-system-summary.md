@@ -1,5 +1,9 @@
 # Dotfiles System -- How It Works
 
+> **LEGACY DOCUMENTATION**
+>
+> This document describes the legacy dotfiles system (pre-dotpkg). It documents manual setup workflows that have been superseded by the dotpkg CLI tool. Refer to [README.md](../README.md) for current dotpkg documentation.
+
 ## Overview
 
 The system lives in `~/dotfiles/`, a Git repository that stores configuration files and shell scripts. Together they automate the setup of a new Mac from a blank state and keep configurations in sync across machines. The repo is hosted on GitHub at `tima/dotfiles`.
@@ -74,6 +78,9 @@ A script of `defaults write` commands that configure macOS system preferences: k
 
 Requires a logout or restart for some changes to take effect.
 
+> **Terminology Note**
+>
+> In this legacy documentation, composable units are called "stow packages." In the current dotpkg system, these are called "bundles." The concepts are similar—both are collections of configuration files, dependencies, and metadata—but bundles are more flexible and support more features (Brewfiles, extensions, themes, presets). If you're reading this to understand the old system, use "stow package." If you're using dotpkg, refer to the [README](../README.md) which uses the term "bundle."
 
 ## Stow Package Types
 

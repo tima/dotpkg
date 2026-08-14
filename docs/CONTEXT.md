@@ -33,7 +33,10 @@ Phase 3 complete (2026-08-01):
 
 Phase 4 complete (2026-08-01):
 - `lib/state.sh` — `state_add_preset(name)` records applied presets in `installed_presets[]`; `state_add_bundle` accepts optional `stow_paths` (space-separated, stored as JSON array)
-- `lib/helpers.sh` — `dotpkg_preset` propagates handler return codes; sources `$DOTPKG_HOME/presets/<category>.local.sh` after preset for per-machine overrides; calls `state_add_preset` on success; `_preset_finder` adds expand-save/print-dialogs and DSDontWriteNetworkStores/DSDontWriteUSBStores
+- `lib/helpers.sh`:
+  - `dotpkg_preset` propagates handler return codes and calls `state_add_preset` on success.
+  - Sources `$DOTPKG_HOME/presets/<category>.local.sh` after preset runs for per-machine overrides.
+  - `_preset_finder` adds expand-save/print-dialogs and DSDontWriteNetworkStores/DSDontWriteUSBStores.
 - `lib/bundle.sh` — `install_bundle` collects top-level stow/ entries after `stow_apply`, passes to `state_add_bundle`
 - `tests/test_helpers.sh` — 50 assertions: all preset categories (valid flags, invalid flags, default values), hotkey_disable, hotkey_set_corner, local override sourcing, installed_presets tracking, stow_paths in state; system commands mocked (defaults/killall/osascript/sqlite3) — no system side-effects
 
