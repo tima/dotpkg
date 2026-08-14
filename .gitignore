@@ -1,6 +1,7 @@
 # Tool-specific configuration
 .agents/
 .claude/
+skills-lock.json
 
 # Working/scratch files
 raw/
