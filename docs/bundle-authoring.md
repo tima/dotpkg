@@ -178,6 +178,35 @@ shell-tools
 
 Resolution order: local `bundles/` -> local `profiles/` -> user remotes (`~/.dotpkg/sources`) -> GitHub shorthand
 
+## README.md — Documentation
+
+Optional, but recommended. A human-readable description of what the bundle does, what it installs, and any manual setup required (especially for remote bundles where `defaults.sh` is not executed).
+
+**Suggested structure** (not required):
+
+```markdown
+# Bundle Name
+
+## What This Bundle Does
+Brief description of the bundle's purpose.
+
+## What Gets Installed
+- List of formulas, casks, or tools
+- Configuration details
+
+## Prerequisites
+Any setup required before installation (if any).
+
+## Manual Setup (for remote bundles)
+If this bundle requires `defaults write` commands or other manual steps, document them here. Users will review and add them to their personal `defaults.sh` if needed.
+
+Example:
+    defaults write com.company.app "Key" -string "value"
+```
+
+Write what your bundle actually needs. This template is a starting point, not a requirement.
+
+
 ## Profiles
 
 A profile is a bundle with `type=profile` that contains only `requires.txt`. It represents a machine role.
