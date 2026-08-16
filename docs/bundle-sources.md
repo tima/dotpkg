@@ -11,7 +11,7 @@ Bundles are resolved in this order:
 
 Add a line to `~/.dotpkg/sources`:
 
-```
+```text
 tima/dotpkg-bundles
 myorg/shared-bundles
 git@github.internal:team/bundles.git
