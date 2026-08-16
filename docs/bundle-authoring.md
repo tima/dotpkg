@@ -23,7 +23,7 @@ type=bundle
 
 Optional:
 
-```
+```text
 stow_target=~/Library/Application Support/Code/User
 ```
 
@@ -31,7 +31,7 @@ If `stow_target` is omitted, stow targets `$HOME`. If a bundle needs multiple st
 
 For theme file destinations:
 
-```
+```text
 theme_target=~/Library/Application Support/SomeApp/themes
 ```
 
@@ -150,7 +150,7 @@ Editor extension IDs, one per line. dotpkg detects installed editors (VS Code, C
 - `extensions.codium.txt` — Codium only
 - `extensions.txt` — fallback for any editor without a specific file
 
-```
+```text
 # extensions.vscode.txt
 arcticicestudio.nord-visual-studio-code
 ms-python.python
