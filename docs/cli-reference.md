@@ -2,54 +2,54 @@
 
 Full command reference with flags and arguments.
 
-```
+```bash
 dotpkg init [--repo PATH] [--profile NAME]
             [-y|--non-interactive]
 ```
 Bootstrap a machine. Prompts for dotfiles repo path (default: `~/dotfiles`). Installs root bundle. Optionally installs a profile. `-y` or `--non-interactive` skips interactive prompts.
 
-```
+```bash
 dotpkg add <bundle>
 ```
 Install a bundle by name or GitHub shorthand (`user/repo`). Root bundle installed first if not already present. Resolves and installs dependencies.
 
-```
+```bash
 dotpkg sync
 ```
 Re-apply all installed bundles. Idempotent — safe to run repeatedly.
 
-```
+```bash
 dotpkg status [--json]
 ```
 Show installed bundles and applied presets. `--json` for machine-readable output.
 
-```
+```bash
 dotpkg list [--local | --remote]
 ```
 List available bundles from all sources. `--local` shows only your dotfiles repo. `--remote` shows registered sources and cached GitHub bundles.
 
-```
+```bash
 dotpkg update
 ```
 Pull latest versions of remote bundles, then sync.
 
-```
+```bash
 dotpkg create <name>
 ```
 Scaffold a new bundle directory under `bundles/<name>/`.
 
-```
+```bash
 dotpkg adopt --brew
 ```
 Dump currently installed Homebrew packages, review, and assign to a bundle.
 
-```
+```bash
 dotpkg adopt <file> --bundle|-b <name>
             [-y|--non-interactive]
 ```
 Move a config file into a bundle's `stow/` package and immediately stow it, creating a symlink at the original location. File must be under `$HOME` and must not already be a symlink. Use `-y` or `--non-interactive` to skip confirmation.
 
-```
+```bash
 dotpkg --version
 ```
 Show dotpkg version.
