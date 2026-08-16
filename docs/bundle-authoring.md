@@ -12,7 +12,7 @@ This creates `bundles/my-bundle/` with a starter `bundle.info` and `stow/` dir. 
 
 Plain key-value pairs. No parser needed.
 
-```
+```text
 name=dev-tools
 description=Development tools and configuration
 author=yourname
@@ -39,7 +39,7 @@ theme_target=~/Library/Application Support/SomeApp/themes
 
 Standard Homebrew Bundle format. dotpkg runs `brew bundle` without `--upgrade` — adds missing formulas, never upgrades existing ones. Version management is separate.
 
-```
+```bash
 brew "ripgrep"
 brew "fd"
 brew "python@3.12"
