@@ -118,6 +118,8 @@ type=bundle
 
 Valid values for `type`: `bundle` (default), `profile`.
 
+**Bundle naming:** Bundle names must be alphanumeric, dots, underscores, and hyphens only (no spaces, no slashes). Pattern: `^[a-zA-Z0-9._-]+$`. The `name` field must match the directory name for local bundles. GitHub shorthand bundles use the format `user/repo` and do not need a matching directory.
+
 Optional fields:
 
 ```
@@ -587,3 +589,4 @@ AI agents can use dotpkg to:
 - [ ] **stow_target for themes**: how to handle apps with Group Container paths that vary per machine
 - [ ] **gum as a hard dependency vs graceful fallback**: if not installed
 - [ ] **CLI name**: `dotpkg` is functional but open to a name with more personality
+- [ ] **starship as a bootstrap dependency**: like `stow` and `gum`, starship is a core part of the shell environment and could be installed by bootstrap.sh rather than left to the root bundle Brewfile

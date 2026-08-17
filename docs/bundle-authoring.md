@@ -21,6 +21,8 @@ type=bundle
 
 `type` is `bundle` (default) or `profile`. The `name` field must match the directory name for local bundles.
 
+**Bundle naming:** Names must be alphanumeric, dots, underscores, and hyphens only — no spaces or slashes. For example: `dev-tools`, `shell-config`, `ansible-dev`. GitHub shorthand bundles (e.g., `user/repo`) use slashes but are referenced by name, not created as local directories.
+
 Optional:
 
 ```text
